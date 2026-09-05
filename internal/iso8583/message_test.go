@@ -3,44 +3,43 @@ package iso8583
 import (
 	"strings"
 	"testing"
+	"time"
 
 	moov "github.com/moov-io/iso8583"
 )
 
-// requisicaoExemplo e a 0100 canonica usada nos testes e na verificacao manual
+// requisicaoCanonica e a 0100 usada nos testes e na verificacao manual
 // descrita no README.
 //
 // O PAN comeca por 9 porque o ISO/IEC 7812 reserva o MII 9 para atribuicao
 // nacional, faixa nao alocada a nenhum esquema internacional de cartoes. O
 // numero e valido por Luhn e inteiramente sintetico.
+//
+// O instante esta em UTC para que hora local e hora de transmissao coincidam,
+// mantendo o layout esperado estavel. A distincao entre os dois fusos e
+// verificada em TestRequisicaoDerivaCamposTemporais.
+func requisicaoCanonica() Requisicao {
+	return Requisicao{
+		PAN:                   "9999990000000014",
+		ProcessingCode:        "000000",
+		Valor:                 "000000010000",
+		STAN:                  "000001",
+		MCC:                   "5411",
+		POSEntryMode:          "021",
+		InstituicaoAdquirente: "000001",
+		RRN:                   "000000000001",
+		TerminalID:            "TERM0001",
+		Moeda:                 "986",
+		Instante:              time.Date(2026, 9, 5, 14, 30, 0, 0, time.UTC),
+	}
+}
+
 func requisicaoExemplo(t *testing.T) *moov.Message {
 	t.Helper()
 
-	msg := NewMessage()
-	msg.MTI(MTIAuthRequest)
-
-	campos := []struct {
-		de    int
-		valor string
-	}{
-		{2, "9999990000000014"},
-		{3, "000000"},
-		{4, "000000010000"},
-		{7, "0905143000"},
-		{11, "000001"},
-		{12, "143000"},
-		{13, "0905"},
-		{18, "5411"},
-		{22, "021"},
-		{32, "000001"},
-		{37, "000000000001"},
-		{41, "TERM0001"},
-		{49, "986"},
-	}
-	for _, c := range campos {
-		if err := msg.Field(c.de, c.valor); err != nil {
-			t.Fatalf("gravando DE %d: %v", c.de, err)
-		}
+	msg, err := requisicaoCanonica().Message()
+	if err != nil {
+		t.Fatalf("montando a 0100: %v", err)
 	}
 	return msg
 }

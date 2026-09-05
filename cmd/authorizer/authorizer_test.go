@@ -30,23 +30,21 @@ func servidorDeTeste(t *testing.T) string {
 func requisicaoDeTeste(t *testing.T, stan string) []byte {
 	t.Helper()
 
-	msg := iso.NewMessage()
-	msg.MTI(iso.MTIAuthRequest)
-	campos := map[int]string{
-		2: "9999990000000014", 3: "000000", 4: "000000010000",
-		7: "0905143000", 11: stan, 12: "143000", 13: "0905",
-		18: "5411", 22: "021", 32: "000001",
-		37: "000000000001", 41: "TERM0001", 49: "986",
-	}
-	for de, valor := range campos {
-		if err := msg.Field(de, valor); err != nil {
-			t.Fatalf("gravando DE %d: %v", de, err)
-		}
-	}
-
-	empacotada, err := msg.Pack()
+	empacotada, err := iso.Requisicao{
+		PAN:                   "9999990000000014",
+		ProcessingCode:        "000000",
+		Valor:                 "000000010000",
+		STAN:                  stan,
+		MCC:                   "5411",
+		POSEntryMode:          "021",
+		InstituicaoAdquirente: "000001",
+		RRN:                   "000000000001",
+		TerminalID:            "TERM0001",
+		Moeda:                 "986",
+		Instante:              time.Date(2026, 9, 5, 14, 30, 0, 0, time.UTC),
+	}.Pack()
 	if err != nil {
-		t.Fatalf("Pack: %v", err)
+		t.Fatalf("montando a 0100: %v", err)
 	}
 	return empacotada
 }

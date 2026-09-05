@@ -13,13 +13,14 @@ latência e vazão que sustentem a análise do artigo.
 
 ## Estado
 
-Implementado até o **passo 1** da ordem de execução: o autorizador mock responde
-a uma `0100` com uma `0110`. Sem flags, sem métricas e sem concorrência.
+Implementado até o **passo 2** da ordem de execução: o caminho ponta a ponta
+está fechado — o injetor envia uma `0100` e lê a `0110`. Uma requisição por
+execução, sem controle de taxa, sem coleta de latência e sem flags.
 
 | Passo | Componente | Estado |
 |-------|-----------|--------|
 | 1 | Autorizador responde a uma `0100` | **concluído** |
-| 2 | Injetor envia `0100` e lê a resposta | pendente |
+| 2 | Injetor envia `0100` e lê a resposta | **concluído** |
 | 3 | Controle de taxa em modelo aberto | pendente |
 | 4 | Coleta de latência, `raw.csv` e `summary.json` | pendente |
 | 5 | Flags de configuração do mock | pendente |
@@ -54,7 +55,46 @@ autorizador escutando em 127.0.0.1:8583
 
 Encerre com `Ctrl+C`.
 
+## Executando o injetor
+
+Com o autorizador em execução em outro terminal:
+
+```sh
+go run ./cmd/injector
+```
+
+Ele envia uma única `0100`, lê a `0110` e confere a correlação pelo STAN:
+
+```
+conectado a 127.0.0.1:8583
+resposta   : 0110723800010A808000169999990000000014...00TERM0001986
+MTI        : 0110
+DE 11 STAN : 000001
+DE 39      : 00
+decorrido  : 535.2µs
+```
+
+Saída em `stdout`, log em `stderr`. O processo termina com status diferente de
+zero se a resposta não vier, se o MTI não for `0110` ou se o STAN divergir do
+enviado.
+
+> **O tempo em `decorrido` não é um resultado.** É apenas um sinal de vida. A
+> medição que sustenta o artigo depende do modelo aberto e da correção da
+> omissão coordenada, ambos ainda não implementados (passos 3 e 4). Até lá,
+> nenhum número produzido por este binário deve ser tratado como dado.
+
+Os DEs 7, 12 e 13 vêm do relógio, então variam a cada execução: o DE 7 é a
+data/hora de transmissão em UTC e os DEs 12 e 13 são hora e data locais do
+ponto de captura. Em fuso UTC-3 os dois diferem em três horas, o que é visível
+na saída.
+
 ## Verificação manual
+
+O injetor acima já exercita o caminho completo, mas usa o mesmo código de
+montagem e enquadramento do autorizador — se ambos estiverem errados da mesma
+forma, o teste passa. O procedimento abaixo envia bytes crus, sem depender de
+nenhum código deste repositório, e por isso verifica o formato de fio de forma
+independente.
 
 Com o autorizador em execução em outro terminal, envie uma `0100` canônica e
 leia a `0110`.
@@ -134,7 +174,7 @@ ecoados. O critério está em [docs/experimento.md](docs/experimento.md).
 
 ```
 cmd/authorizer/      sistema sob teste — autorizador mock
-cmd/injector/        gerador de carga (pendente)
+cmd/injector/        gerador de carga
 internal/iso8583/    spec, montagem, parse e enquadramento das mensagens
 internal/ratelimit/  controle de taxa em modelo aberto (pendente)
 internal/metrics/    coleta de latência e consolidação (pendente)

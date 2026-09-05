@@ -3,8 +3,8 @@
 Documento de registro do aparato. Cada decisão que afeta a interpretação dos
 números medidos é registrada aqui, com a justificativa.
 
-Estado atual: **passo 1 da ordem de execução** (autorizador mock respondendo a
-uma `0100` com uma `0110`). As seções de ambiente, procedimento de execução e
+Estado atual: **passo 2 da ordem de execução** (caminho ponta a ponta fechado
+entre injetor e autorizador). As seções de ambiente, procedimento de execução e
 resultados são preenchidas conforme os passos seguintes forem concluídos.
 
 ---
@@ -146,9 +146,9 @@ O sistema sob teste precisa ser **previsível, não realista**. Se o comportamen
 dele for opaco, não há como atribuir uma variação de latência ao injetor ou ao
 autorizador.
 
-**Estado atual (passo 1):** servidor TCP em `127.0.0.1:8583`, sem flags, sem
-métricas e sem concorrência. As conexões são atendidas em série e o DE 39 é
-sempre `00`. Cada conexão aceita múltiplos pares `0100`/`0110`.
+**Estado atual:** servidor TCP em `127.0.0.1:8583`, sem flags, sem métricas e
+sem concorrência. As conexões são atendidas em série e o DE 39 é sempre `00`.
+Cada conexão aceita múltiplos pares `0100`/`0110`.
 
 Ainda não implementado, nos passos seguintes: latência de serviço configurável e
 sua distribuição, taxa de aprovação, distribuição dos códigos de recusa, teto de
@@ -156,7 +156,54 @@ conexões simultâneas e semente.
 
 ---
 
-## 5. Ambiente de execução
+## 5. Injetor
+
+**Estado atual (passo 2):** envia uma única `0100` por execução e lê a `0110`
+correspondente. Sem controle de taxa, sem coleta de latência, sem flags.
+
+### 5.1 Origem dos campos temporais
+
+Os DEs 7, 12 e 13 derivam de um único instante, e não de três leituras
+independentes do relógio — três leituras poderiam cair em segundos diferentes e
+produzir uma mensagem internamente inconsistente.
+
+| DE | Fuso | Formato |
+|----|------|---------|
+| 7  | UTC | `MMDDhhmmss` |
+| 12 | local | `hhmmss` |
+| 13 | local | `MMDD` |
+
+O DE 7 é a data/hora de **transmissão** e segue a convenção da norma de ser
+expresso em UTC. Os DEs 12 e 13 são hora e data **locais do ponto de captura**.
+Em fuso UTC-3 os dois diferem em três horas, e a distinção é verificada em
+`TestRequisicaoDerivaCamposTemporais` com um instante em fuso deslocado — se
+todos os campos usassem o mesmo fuso, o teste não distinguiria os dois casos.
+
+### 5.2 O que ainda não é medição
+
+O injetor imprime o tempo decorrido da troca, mas **esse número não é um
+resultado do experimento**. Ele é medido em modelo fechado, sobre uma única
+requisição, e não corrige omissão coordenada. Serve como sinal de vida do
+caminho ponta a ponta e nada além disso.
+
+A medição válida depende de dois requisitos ainda não implementados: o modelo
+aberto de chegadas (passo 3) e o registro da latência a partir do instante de
+chegada pretendido (passo 4).
+
+### 5.3 Limite do teste automatizado
+
+O teste ponta a ponta do injetor sobe um servidor que reproduz o comportamento
+do autorizador usando o **mesmo caminho de código** de montagem da resposta —
+o binário do autorizador vive em outro `package main` e não pode ser importado.
+Um erro comum às duas pontas, portanto, passaria despercebido por ele.
+
+Essa lacuna é coberta pela verificação manual documentada no README, que envia
+bytes crus sem depender de nenhum código deste repositório e confere o formato
+de fio de forma independente.
+
+---
+
+## 6. Ambiente de execução
 
 *A ser preenchido quando os experimentos forem executados.* O bloco de ambiente
 completo — versão do Go, `GOMAXPROCS`, número de CPUs, sistema operacional,
