@@ -1,10 +1,9 @@
 // Command authorizer e o sistema sob teste do experimento: um autorizador mock
 // que aceita requisicoes ISO 8583 0100 e responde 0110.
 //
-// Este e o passo 1 da ordem de execucao descrita em CLAUDE.md. Nao ha flags,
-// metricas nem concorrencia: as conexoes sao atendidas uma de cada vez e o
-// DE 39 e sempre "00". Latencia artificial, taxa de aprovacao e atendimento
-// concorrente entram nos passos seguintes.
+// Nao ha flags nem metricas, e o DE 39 e sempre "00". Latencia artificial,
+// taxa de aprovacao, distribuicao dos codigos de recusa e teto de conexoes
+// simultaneas entram nos passos seguintes.
 package main
 
 import (
@@ -43,8 +42,17 @@ func main() {
 	}
 }
 
-// serve aceita conexoes em serie. Uma conexao e atendida ate o fim antes que a
-// proxima seja aceita.
+// serve aceita conexoes concorrentes, cada uma atendida em sua propria
+// goroutine.
+//
+// O atendimento em serie do passo 1 nao serve ao injetor em modelo aberto: com
+// um pool de conexoes, apenas a primeira seria atendida e as demais ficariam
+// paradas na fila de accept do sistema operacional. O injetor mediria essa
+// espera como latencia do autorizador, que e exatamente o tipo de artefato de
+// aparato que invalida o experimento.
+//
+// Nao ha teto de conexoes simultaneas ainda; ele entra no passo 5, como
+// --max-conns, para permitir provocar saturacao de forma controlada.
 func serve(ln net.Listener) error {
 	for {
 		conn, err := ln.Accept()
@@ -53,12 +61,14 @@ func serve(ln net.Listener) error {
 		}
 
 		log.Printf("conexao aceita de %s", conn.RemoteAddr())
-		if err := handleConn(conn); err != nil {
-			log.Printf("conexao %s encerrada com erro: %v", conn.RemoteAddr(), err)
-		} else {
+		go func() {
+			defer conn.Close()
+			if err := handleConn(conn); err != nil {
+				log.Printf("conexao %s encerrada com erro: %v", conn.RemoteAddr(), err)
+				return
+			}
 			log.Printf("conexao %s encerrada", conn.RemoteAddr())
-		}
-		conn.Close()
+		}()
 	}
 }
 

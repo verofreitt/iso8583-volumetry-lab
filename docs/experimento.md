@@ -3,8 +3,8 @@
 Documento de registro do aparato. Cada decisão que afeta a interpretação dos
 números medidos é registrada aqui, com a justificativa.
 
-Estado atual: **passo 2 da ordem de execução** (caminho ponta a ponta fechado
-entre injetor e autorizador). As seções de ambiente, procedimento de execução e
+Estado atual: **passo 3 da ordem de execução** (controle de taxa em modelo
+aberto). As seções de ambiente, procedimento de execução e
 resultados são preenchidas conforme os passos seguintes forem concluídos.
 
 ---
@@ -146,9 +146,17 @@ O sistema sob teste precisa ser **previsível, não realista**. Se o comportamen
 dele for opaco, não há como atribuir uma variação de latência ao injetor ou ao
 autorizador.
 
-**Estado atual:** servidor TCP em `127.0.0.1:8583`, sem flags, sem métricas e
-sem concorrência. As conexões são atendidas em série e o DE 39 é sempre `00`.
-Cada conexão aceita múltiplos pares `0100`/`0110`.
+**Estado atual:** servidor TCP em `127.0.0.1:8583`, sem flags e sem métricas.
+O DE 39 é sempre `00`. Cada conexão aceita múltiplos pares `0100`/`0110`, e as
+conexões são atendidas **concorrentemente**, cada uma em sua própria goroutine.
+
+O atendimento em série do passo 1 foi substituído no passo 3 por necessidade, e
+não por antecipação: com um pool de conexões no injetor, apenas a primeira
+seria atendida e as demais ficariam paradas na fila de *accept* do sistema
+operacional. O injetor mediria essa espera como latência do autorizador — um
+artefato de aparato que invalidaria o experimento. O teto de conexões
+simultâneas (`--max-conns`), que serve ao propósito oposto de provocar
+saturação de forma controlada, continua pendente para o passo 5.
 
 Ainda não implementado, nos passos seguintes: latência de serviço configurável e
 sua distribuição, taxa de aprovação, distribuição dos códigos de recusa, teto de
@@ -158,8 +166,9 @@ conexões simultâneas e semente.
 
 ## 5. Injetor
 
-**Estado atual (passo 2):** envia uma única `0100` por execução e lê a `0110`
-correspondente. Sem controle de taxa, sem coleta de latência, sem flags.
+**Estado atual (passo 3):** aplica uma taxa de chegada fixa em modelo aberto,
+por uma duração configurável. Sem coleta de latência com histograma, sem
+warm-up, sem semente e sem arquivos de saída — esses são o passo 4.
 
 ### 5.1 Origem dos campos temporais
 
@@ -179,18 +188,95 @@ Em fuso UTC-3 os dois diferem em três horas, e a distinção é verificada em
 `TestRequisicaoDerivaCamposTemporais` com um instante em fuso deslocado — se
 todos os campos usassem o mesmo fuso, o teste não distinguiria os dois casos.
 
-### 5.2 O que ainda não é medição
+### 5.2 Modelo aberto de chegadas
 
-O injetor imprime o tempo decorrido da troca, mas **esse número não é um
-resultado do experimento**. Ele é medido em modelo fechado, sobre uma única
-requisição, e não corrige omissão coordenada. Serve como sinal de vida do
-caminho ponta a ponta e nada além disso.
+As chegadas são independentes das conclusões: o instante em que cada requisição
+deve partir é determinado apenas pelo relógio, nunca pelo término da requisição
+anterior. Cada envio ocorre em sua própria goroutine.
 
-A medição válida depende de dois requisitos ainda não implementados: o modelo
-aberto de chegadas (passo 3) e o registro da latência a partir do instante de
-chegada pretendido (passo 4).
+O contraste é com o modelo fechado, em que uma resposta lenta atrasa a próxima
+requisição, o sistema nunca é submetido à taxa pretendida e a cauda da
+distribuição desaparece da medição — Schroeder, Wierman e Harchol-Balter (2006).
 
-### 5.3 Limite do teste automatizado
+Duas decisões de implementação:
+
+**O instante de cada chegada é calculado a partir do índice**, como
+`round(i / TPS)`, e nunca pela acumulação de um intervalo. A 3 TPS o intervalo
+é 333,333 ms com dízima, não representável em nanossegundos; somar
+repetidamente o valor truncado faria a taxa efetiva derivar ao longo da rodada,
+e a taxa declarada no artigo deixaria de corresponder à taxa aplicada. Coberto
+por `TestDeslocamentoNaoDeriva`.
+
+**Não há teto para o número de requisições simultâneas em voo.** Um teto
+transformaria o modelo aberto em fechado assim que fosse atingido, escondendo
+justamente a saturação que o experimento pretende medir. A contrapartida é que,
+se o autorizador parar de responder, o consumo de memória do injetor cresce com
+a taxa. É um comportamento aceito e declarado, não um descuido.
+
+O pool de conexões é o único ponto de espera, e a espera é legítima: é o que um
+cliente real com pool limitado observa, e ela é medida a partir do instante de
+chegada pretendido. As conexões são todas abertas **antes** do início da
+rodada — o custo de estabelecer uma conexão TCP, mesmo em loopback, é da mesma
+ordem de grandeza do tempo de serviço do mock e dominaria a latência se fosse
+pago dentro da requisição.
+
+Uma conexão que falha no meio de uma troca **não volta ao pool**: o fluxo pode
+ter ficado dessincronizado, e a próxima requisição a usá-la leria a resposta
+errada, quebrando a correlação por STAN em silêncio. Ela é fechada e
+substituída, para que o pool não encolha ao longo da rodada.
+
+### 5.3 Vazão alcançada: o denominador correto
+
+A vazão alcançada é calculada sobre a **janela de chegadas**, não sobre o tempo
+decorrido até a última resposta.
+
+As N chegadas de uma rodada ocupam os instantes 0, 1/TPS, 2/TPS, até
+(N−1)/TPS — uma janela que termina um intervalo antes do fim da rodada.
+Dividir o número de respostas pelo tempo decorrido produz vazão **acima de 100%
+do alvo**, o que é impossível em modelo aberto: nenhuma resposta pode ser
+contada antes de sua chegada ter sido agendada. O erro foi observado na prática
+(uma rodada de 10 TPS por 5 s reportou 10,20 TPS, ou 102% do alvo) antes de ser
+corrigido.
+
+Com a janela de chegadas como denominador, a vazão só fica abaixo do alvo
+quando alguma requisição deixou de ser respondida — que é exatamente o sinal de
+saturação que a métrica deve capturar.
+
+### 5.4 Atraso de agendamento: médio, não máximo
+
+O injetor registra duas medidas do próprio desvio em relação ao plano:
+
+| Medida | O que indica |
+|--------|--------------|
+| atraso **médio** | atraso sistemático — diagnóstico de saturação do injetor |
+| atraso **máximo** | pior caso — sensível a pausas do GC e ao temporizador do SO |
+
+O critério de saturação usa o **médio**. Uma versão anterior usava o máximo e
+disparava o aviso em rodadas de 500 TPS em que todas as 2500 chegadas foram
+despachadas e respondidas dentro da janela: um único sobressalto de 8 ms basta
+para elevar o máximo sem que o injetor tenha deixado de sustentar a taxa. Com o
+critério pelo máximo, o aviso viraria ruído em qualquer rodada de taxa alta e
+perderia utilidade. Coberto por `TestRelatarNaoAvisaPorPicoIsolado`.
+
+### 5.5 O que ainda não é medição
+
+Nenhum número produzido pelo injetor até aqui é resultado de experimento. Não
+há warm-up, semente, histograma de latência nem registro do ambiente de
+execução. A latência por transação, com correção de omissão coordenada e
+escrita de `raw.csv` e `summary.json`, é o passo 4.
+
+### 5.6 Limite da correlação por STAN
+
+O STAN deriva do índice da chegada, o que garante unicidade dentro da rodada e
+permite conferir a correspondência entre requisição e resposta — a conferência
+é feita em toda troca, e uma divergência é tratada como erro de transporte.
+
+O DE 11 tem seis dígitos, então a numeração reinicia a cada **1.000.000** de
+requisições. Uma rodada mais longa que isso precisaria de outra chave de
+correlação. A 2000 TPS, o limite corresponde a cerca de 8 minutos de rodada
+contínua.
+
+### 5.7 Limite do teste automatizado
 
 O teste ponta a ponta do injetor sobe um servidor que reproduz o comportamento
 do autorizador usando o **mesmo caminho de código** de montagem da resposta —
@@ -203,7 +289,34 @@ de fio de forma independente.
 
 ---
 
-## 6. Ambiente de execução
+## 6. Teto preliminar do injetor
+
+Medições exploratórias nesta máquina, com o autorizador respondendo sem
+latência artificial e 32 conexões, rodadas de 5 s:
+
+| Alvo | Chegadas | Respondidas | Atraso médio | Atraso máximo |
+|------|----------|-------------|--------------|---------------|
+| 10 TPS | 50 | 50 | 659 µs | 3,56 ms |
+| 500 TPS | 2500 | 2500 | 562 µs | 4,67 ms |
+| 5000 TPS | 25000 | 25000 | 511 µs | 19,22 ms |
+
+O atraso médio se estabiliza em torno de **500 a 660 µs, independentemente da
+taxa pedida**. Isso não é contenção do injetor: é o piso de granularidade do
+temporizador do sistema operacional. O comportamento implica um teto de injeção
+próximo de **2000 TPS**, taxa em que o intervalo entre chegadas (500 µs) cruza
+esse piso.
+
+Acima desse ponto o injetor continua entregando o número correto de chegadas,
+mas não nos instantes pretendidos: o espaçamento deixa de ser uniforme e a
+carga passa a chegar em rajadas.
+
+> Estes números são **preliminares**. A calibração formal é o passo 6, e o
+> valor apurado lá vai para o artigo como limite declarado do aparato. Nenhum
+> experimento deve ser executado em taxa acima do teto de calibração sem que
+> isso seja explicitamente discutido: naquele nível de carga o resultado mede o
+> injetor, não o autorizador.
+
+## 7. Ambiente de execução
 
 *A ser preenchido quando os experimentos forem executados.* O bloco de ambiente
 completo — versão do Go, `GOMAXPROCS`, número de CPUs, sistema operacional,

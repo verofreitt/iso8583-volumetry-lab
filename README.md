@@ -13,15 +13,15 @@ latência e vazão que sustentem a análise do artigo.
 
 ## Estado
 
-Implementado até o **passo 2** da ordem de execução: o caminho ponta a ponta
-está fechado — o injetor envia uma `0100` e lê a `0110`. Uma requisição por
-execução, sem controle de taxa, sem coleta de latência e sem flags.
+Implementado até o **passo 3** da ordem de execução: o injetor aplica uma taxa
+de chegada fixa em modelo aberto. Ainda sem coleta de latência com histograma,
+warm-up, semente ou arquivos de saída.
 
 | Passo | Componente | Estado |
 |-------|-----------|--------|
 | 1 | Autorizador responde a uma `0100` | **concluído** |
 | 2 | Injetor envia `0100` e lê a resposta | **concluído** |
-| 3 | Controle de taxa em modelo aberto | pendente |
+| 3 | Controle de taxa em modelo aberto | **concluído** |
 | 4 | Coleta de latência, `raw.csv` e `summary.json` | pendente |
 | 5 | Flags de configuração do mock | pendente |
 | 6 | Baseline de calibração | pendente |
@@ -60,33 +60,67 @@ Encerre com `Ctrl+C`.
 Com o autorizador em execução em outro terminal:
 
 ```sh
-go run ./cmd/injector
+go run ./cmd/injector -tps 10 -duration 5s
 ```
 
-Ele envia uma única `0100`, lê a `0110` e confere a correlação pelo STAN:
+| Flag | Padrão | Significado |
+|------|--------|-------------|
+| `-tps` | `10` | taxa de chegada pretendida, em transações por segundo |
+| `-duration` | `10s` | duração da rodada |
+| `-conns` | `8` | conexões persistentes mantidas com o autorizador |
+
+Saída de uma rodada a 10 TPS por 5 s:
 
 ```
-conectado a 127.0.0.1:8583
-resposta   : 0110723800010A808000169999990000000014...00TERM0001986
-MTI        : 0110
-DE 11 STAN : 000001
-DE 39      : 00
-decorrido  : 535.2µs
+alvo          : 10 TPS por 5s, 8 conexoes
+chegadas      : 50 (janela de 5s)
+respondidas   : 50 (aprovadas 50, recusadas 0)
+erros         : 0
+vazao         : 10.00 TPS (100.0% do alvo)
+tempo total   : 4.901s (ate a ultima resposta)
+atraso medio  : 659µs (agendamento do injetor)
+atraso maximo : 3.562ms (agendamento do injetor)
 ```
 
-Saída em `stdout`, log em `stderr`. O processo termina com status diferente de
-zero se a resposta não vier, se o MTI não for `0110` ou se o STAN divergir do
-enviado.
+Saída em `stdout`, log em `stderr`. `Ctrl+C` interrompe o agendamento de novas
+chegadas, mas as requisições já em voo são aguardadas antes do resumo.
 
-> **O tempo em `decorrido` não é um resultado.** É apenas um sinal de vida. A
-> medição que sustenta o artigo depende do modelo aberto e da correção da
-> omissão coordenada, ambos ainda não implementados (passos 3 e 4). Até lá,
-> nenhum número produzido por este binário deve ser tratado como dado.
+### Como ler o resumo
 
-Os DEs 7, 12 e 13 vêm do relógio, então variam a cada execução: o DE 7 é a
-data/hora de transmissão em UTC e os DEs 12 e 13 são hora e data locais do
-ponto de captura. Em fuso UTC-3 os dois diferem em três horas, o que é visível
-na saída.
+**vazão alcançada vs. alvo** é a métrica mais importante. Ela é calculada
+sobre a *janela de chegadas*, não sobre o tempo decorrido até a última
+resposta: as N chegadas ocupam os instantes 0, 1/TPS, …, (N−1)/TPS, uma janela
+que termina um intervalo antes do fim da rodada. Usar o tempo decorrido como
+denominador produziria vazão acima de 100% do alvo, o que é impossível em
+modelo aberto.
+
+**atraso de agendamento** mede o quanto o injetor se desviou do plano. O
+*médio* é o diagnóstico de saturação do próprio gerador de carga; o *máximo* é
+pior caso e sobe com qualquer pausa do coletor de lixo ou sobressalto do
+temporizador do sistema operacional. Quando o atraso médio ultrapassa o
+intervalo entre chegadas, a rodada passa a medir o injetor e o resumo emite um
+aviso explícito.
+
+**recusas e erros são contados separadamente.** Uma recusa é resposta de
+negócio; um erro de transporte ou timeout é falha de desempenho. Misturar os
+dois invalidaria a análise.
+
+> **Nenhum número aqui é resultado de experimento ainda.** Não há warm-up,
+> semente, histograma de latência nem registro do ambiente. O passo 4 introduz
+> a coleta de latência com HdrHistogram e a escrita de `raw.csv` e
+> `summary.json`.
+
+### Teto preliminar do injetor
+
+Nesta máquina, o atraso médio de agendamento se estabiliza em torno de
+500–660 µs independentemente da taxa pedida — é o piso de granularidade do
+temporizador do sistema operacional, não contenção do injetor. Isso implica um
+teto de injeção próximo de **2000 TPS**, taxa em que o intervalo entre chegadas
+cruza esse piso.
+
+É uma observação preliminar, colhida com o autorizador respondendo sem latência
+artificial. O passo 6 formaliza a calibração e o valor apurado vai para o artigo
+como limite declarado do aparato.
 
 ## Verificação manual
 
@@ -176,7 +210,7 @@ ecoados. O critério está em [docs/experimento.md](docs/experimento.md).
 cmd/authorizer/      sistema sob teste — autorizador mock
 cmd/injector/        gerador de carga
 internal/iso8583/    spec, montagem, parse e enquadramento das mensagens
-internal/ratelimit/  controle de taxa em modelo aberto (pendente)
+internal/ratelimit/  controle de taxa em modelo aberto
 internal/metrics/    coleta de latência e consolidação (pendente)
 internal/massa/      leitura dos CSVs de entrada (pendente)
 data/                massa sintética
