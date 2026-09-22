@@ -13,9 +13,9 @@ latência e vazão que sustentem a análise do artigo.
 
 ## Estado
 
-Implementado até o **passo 4** da ordem de execução: o injetor aplica uma taxa
-de chegada fixa em modelo aberto, mede a latência de cada requisição com
-correção de omissão coordenada e grava `raw.csv` e `summary.json`.
+Implementado até o **passo 5** da ordem de execução: o autorizador mock é
+configurável e determinístico, e o injetor mede a latência de cada requisição
+com correção de omissão coordenada.
 
 | Passo | Componente | Estado |
 |-------|-----------|--------|
@@ -23,7 +23,7 @@ correção de omissão coordenada e grava `raw.csv` e `summary.json`.
 | 2 | Injetor envia `0100` e lê a resposta | **concluído** |
 | 3 | Controle de taxa em modelo aberto | **concluído** |
 | 4 | Coleta de latência, `raw.csv` e `summary.json` | **concluído** |
-| 5 | Flags de configuração do mock | pendente |
+| 5 | Flags de configuração do mock | **concluído** |
 | 6 | Baseline de calibração | pendente |
 | 7 | Execução dos experimentos | pendente |
 
@@ -64,17 +64,54 @@ GORACE="halt_on_error=1" ./injector-race -tps 1000 -duration 8s -conns 64
 ## Executando o autorizador
 
 ```sh
-go run ./cmd/authorizer
+go run ./cmd/authorizer --latency-base 20ms --latency-jitter 10ms   --approval-rate 0.85 --seed 42 --config-out autorizador.json
 ```
 
-Ele escuta em `127.0.0.1:8583` e registra em *stderr* cada conexão aceita e
-encerrada:
+| Flag | Padrão | Efeito |
+|------|--------|--------|
+| `--latency-base` | `0s` | latência de serviço base |
+| `--latency-jitter` | `0s` | média da dispersão somada à base |
+| `--latency-dist` | `exponencial` | forma da dispersão: `exponencial` ou `lognormal` |
+| `--approval-rate` | `1` | proporção de respostas `00` |
+| `--decline-dist` | `51:40,05:30,14:20,91:10` | pesos dos códigos de recusa |
+| `--max-conns` | `0` | teto de requisições simultâneas; 0 remove o teto |
+| `--seed` | `1` | semente das decisões |
+| `--echo-only` | `false` | responde imediatamente, para calibrar o injetor |
+| `--config-out` | — | arquivo com a configuração e o ambiente |
+| `--quiet` | `false` | suprime o log por conexão |
 
-```
-autorizador escutando em 127.0.0.1:8583
+Escuta em `127.0.0.1:8583`. Encerre com `Ctrl+C`.
+
+### Determinismo
+
+Cada decisão — a latência a aplicar e o código do DE 39 — é uma **função pura
+da semente e do STAN**. Não há estado compartilhado nem trava, e o resultado
+independe da ordem de chegada ou de qual goroutine atende. Duas execuções com a
+mesma semente devolvem exatamente as mesmas respostas para as mesmas
+transações.
+
+Um gerador compartilhado daria uma sequência determinada pela semente, mas o
+mapeamento entre valores sorteados e requisições dependeria do escalonador — a
+distribuição agregada seria estável e a rodada não seria reproduzível transação
+a transação.
+
+Repetições da mesma rodada com a mesma semente recebem as mesmas respostas,
+porque os STANs se repetem. Para sorteios diferentes entre repetições, mude a
+semente do autorizador.
+
+### Registrando a configuração dos dois processos
+
+O `summary.json` precisa conter as flags dos dois processos. Em vez de
+transcrevê-las à mão, o autorizador as grava e o injetor as embute:
+
+```sh
+go run ./cmd/authorizer --latency-base 20ms --config-out autorizador.json
+go run ./cmd/injector   --sut-config autorizador.json -tps 200 -duration 20s
 ```
 
-Encerre com `Ctrl+C`.
+O arquivo traz também o ambiente do autorizador, incluindo o `GOMAXPROCS` dele
+— os dois processos disputam CPU na mesma máquina, e os dois valores precisam
+constar do resultado.
 
 ## Executando o injetor
 
@@ -93,7 +130,7 @@ go run ./cmd/injector -tps 200 -duration 20s -warmup 5s -conns 16
 | `-rep` | `1` | número da repetição, usado no nome da pasta de saída |
 | `-seed` | `1` | semente da ordem de consumo da massa |
 | `-results` | `results` | raiz onde a pasta da rodada é criada |
-| `-sut` | — | linha de comando do autorizador, registrada no `summary.json` |
+| `-sut-config` | — | arquivo gravado pelo autorizador com `--config-out` |
 
 > A flag `-seed` é registrada no `summary.json` mas ainda **não tem efeito**:
 > a massa sintética (`internal/massa`) não existe, e todas as requisições usam
@@ -182,12 +219,26 @@ quantificados com rigor no passo 6:
 temporizador do sistema operacional. Acima desse ponto o injetor entrega o
 número correto de chegadas, mas não nos instantes pretendidos.
 
-**Piso de ruído no p99, dezenas de milissegundos.** Com o autorizador
-respondendo sem latência artificial, o p99 da latência de serviço fica em
-25,7 ms a 20 TPS e 11,6 ms a 200 TPS. A cauda não cresce com a carga, o que
-descarta enfileiramento: é ruído ambiente da máquina. O p99 de uma rodada só
-diz algo sobre o autorizador se a latência configurada estiver bem acima desse
-piso.
+**Piso de ruído no p99, milissegundos.** Com o autorizador em `--echo-only`, o
+p99 da latência de serviço fica em alguns milissegundos e não cresce com a
+carga, o que descarta enfileiramento: é ruído ambiente da máquina. O p99 de uma
+rodada só diz algo sobre o autorizador se a latência configurada estiver bem
+acima desse piso.
+
+**Fidelidade da latência do mock, excesso de ~0,7 ms.** O `time.Sleep` do mock
+está preso à mesma granularidade de temporizador. A latência entregue excede a
+configurada em 0,5 a 0,75 ms, aproximadamente constante:
+
+| `--latency-base` | mediana medida | erro relativo |
+|------------------|----------------|---------------|
+| 1 ms | 1718 µs | +72% |
+| 5 ms | 5743 µs | +15% |
+| 20 ms | 20479 µs | +2,4% |
+
+Latências configuradas abaixo de ~10 ms não são fiéis ao valor declarado. Como
+autorizadores reais operam na faixa de dezenas de milissegundos, a restrição
+não atrapalha o experimento pretendido — mas o valor a reportar no artigo é o
+**medido**, não o configurado.
 
 Ambos estão detalhados em [docs/experimento.md](docs/experimento.md).
 

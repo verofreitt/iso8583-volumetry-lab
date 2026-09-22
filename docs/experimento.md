@@ -3,8 +3,8 @@
 Documento de registro do aparato. Cada decisão que afeta a interpretação dos
 números medidos é registrada aqui, com a justificativa.
 
-Estado atual: **passo 4 da ordem de execução** (coleta de latência e escrita
-de `raw.csv` e `summary.json`). As seções de ambiente, procedimento de execução e
+Estado atual: **passo 5 da ordem de execução** (flags de configuração do
+autorizador mock). As seções de ambiente, procedimento de execução e
 resultados são preenchidas conforme os passos seguintes forem concluídos.
 
 ---
@@ -146,21 +146,148 @@ O sistema sob teste precisa ser **previsível, não realista**. Se o comportamen
 dele for opaco, não há como atribuir uma variação de latência ao injetor ou ao
 autorizador.
 
-**Estado atual:** servidor TCP em `127.0.0.1:8583`, sem flags e sem métricas.
-O DE 39 é sempre `00`. Cada conexão aceita múltiplos pares `0100`/`0110`, e as
-conexões são atendidas **concorrentemente**, cada uma em sua própria goroutine.
+Não há lógica de negócio, cache nem qualquer adaptação dinâmica ao volume.
+Qualquer não-linearidade no resultado precisa vir de contenção real de
+recursos, e não de esperteza do mock.
 
-O atendimento em série do passo 1 foi substituído no passo 3 por necessidade, e
-não por antecipação: com um pool de conexões no injetor, apenas a primeira
-seria atendida e as demais ficariam paradas na fila de *accept* do sistema
-operacional. O injetor mediria essa espera como latência do autorizador — um
-artefato de aparato que invalidaria o experimento. O teto de conexões
-simultâneas (`--max-conns`), que serve ao propósito oposto de provocar
-saturação de forma controlada, continua pendente para o passo 5.
+### 4.1 Parâmetros
 
-Ainda não implementado, nos passos seguintes: latência de serviço configurável e
-sua distribuição, taxa de aprovação, distribuição dos códigos de recusa, teto de
-conexões simultâneas e semente.
+| Flag | Padrão | Efeito |
+|------|--------|--------|
+| `--latency-base` | `0s` | latência de serviço base |
+| `--latency-jitter` | `0s` | média da dispersão somada à base |
+| `--latency-dist` | `exponencial` | forma da dispersão: `exponencial` ou `lognormal` |
+| `--approval-rate` | `1` | proporção de respostas `00` |
+| `--decline-dist` | `51:40,05:30,14:20,91:10` | pesos dos códigos de recusa |
+| `--max-conns` | `0` | teto de requisições simultâneas; 0 remove o teto |
+| `--seed` | `1` | semente das decisões |
+| `--echo-only` | `false` | responde imediatamente, sem latência nem sorteio |
+| `--config-out` | — | arquivo onde a configuração e o ambiente são gravados |
+| `--quiet` | `false` | suprime o log por conexão |
+
+### 4.2 Determinismo: função pura de (semente, STAN)
+
+Cada decisão — a latência a aplicar e o código do DE 39 — é uma **função pura
+da semente e do STAN da requisição**. Não há estado compartilhado, não há trava,
+e o resultado independe da ordem de chegada ou de qual goroutine atende.
+
+A alternativa óbvia, um gerador pseudoaleatório compartilhado protegido por
+mutex, produziria uma *sequência* determinada pela semente, mas o **mapeamento**
+entre valores sorteados e requisições dependeria do escalonador. A distribuição
+agregada seria estável, e ainda assim duas execuções idênticas dariam respostas
+diferentes para a mesma transação. Isso contraria a exigência de
+reprodutibilidade bit a bit, que a seção 1 do CLAUDE.md lista como prioridade
+alta.
+
+A derivação usa FNV-1a sobre o STAN, misturado com a semente, e splitmix64 para
+os sorteios subsequentes. O DE 11 é a chave porque já é único dentro da rodada
+e já é a chave de correlação entre requisição e resposta.
+
+Consequência prática: repetições da mesma rodada com a mesma semente recebem as
+mesmas respostas, porque os STANs se repetem. Para obter sorteios diferentes
+entre repetições, mude a semente do autorizador.
+
+Verificado em `TestAutorizadorMesmaSementeMesmasRespostas` e, ponta a ponta,
+comparando a coluna `de39` do `raw.csv` de duas rodadas independentes.
+
+### 4.3 Distribuições da dispersão
+
+Nas duas distribuições, **a média da dispersão é o valor de
+`--latency-jitter`**, e o valor sorteado é sempre positivo. A latência de
+serviço é `--latency-base` mais a dispersão.
+
+| Distribuição | Parametrização | Característica |
+|--------------|----------------|----------------|
+| `exponencial` | média = jitter | sem memória, cauda moderada |
+| `lognormal` | média = jitter, σ = 1, logo μ = ln(jitter) − ½ | cauda mais pesada para a mesma média |
+
+O σ da lognormal fica **fixo em 1** para que a distribuição seja descrita por um
+único parâmetro e para que o artigo declare a parametrização sem ambiguidade.
+
+A exponencial é a escolha natural para tempo de serviço sem memória. A
+lognormal existe para investigar percentis altos sem elevar a média, que é o
+regime em que a discussão de cauda do artigo se situa.
+
+Não há teto para o valor sorteado. Um teto truncaria justamente a cauda que o
+experimento investiga.
+
+### 4.4 Fidelidade da latência configurada
+
+O mock aplica a latência com `time.Sleep`, que está sujeito à granularidade do
+temporizador do sistema operacional — a mesma que limita o agendamento do
+injetor. A latência entregue tem, portanto, um excesso sistemático.
+
+Medido nesta máquina, a 100 TPS, com jitter zero:
+
+| `--latency-base` | mediana medida | excesso | erro relativo |
+|------------------|----------------|---------|---------------|
+| 500 µs | 1215 µs | +715 µs | **+143%** |
+| 1 ms | 1718 µs | +718 µs | +72% |
+| 2 ms | 2725 µs | +725 µs | +36% |
+| 5 ms | 5743 µs | +743 µs | +15% |
+| 20 ms | 20479 µs | +479 µs | **+2,4%** |
+
+O excesso é aproximadamente **constante em 0,5 a 0,75 ms**, e reúne a
+granularidade do `time.Sleep` com o próprio tempo de ida e volta em loopback
+(mediana de 177 µs em modo eco). O erro *relativo* só se torna desprezível
+acima de cerca de 20 ms.
+
+> **Consequência para o desenho dos experimentos:** latências de serviço
+> configuradas abaixo de ~10 ms não são fiéis ao valor declarado. Como
+> autorizadores reais operam na faixa de dezenas de milissegundos, a restrição
+> não atrapalha o experimento pretendido — mas precisa ser declarada, e o valor
+> a reportar no artigo é o **medido**, não o configurado.
+
+### 4.5 `--max-conns`: teto por requisição, não por conexão
+
+O teto é aplicado a **requisições atendidas simultaneamente**, ainda que a flag
+se chame `--max-conns`.
+
+Aplicado por conexão, como o nome sugere, o parâmetro seria uma função degrau
+contra um cliente que mantém conexões persistentes: abaixo do tamanho do pool
+do injetor não teria efeito algum, e acima dele as conexões excedentes ficariam
+paradas para sempre e todas as suas requisições expirariam. Não produziria
+curva de saturação, que é o propósito declarado do parâmetro na seção 4 do
+CLAUDE.md.
+
+Aplicado por requisição, o teto enfileira de verdade, e a espera aparece na
+latência medida. É o modelo de um servidor com concorrência limitada.
+
+Coberto por `TestAutorizadorRespeitaTetoDeSimultaneas` e seu contraponto sem
+teto.
+
+### 4.6 `--echo-only`
+
+Responde imediatamente, sem latência e sem sorteio, sempre com `00`. É o alvo
+trivial exigido pela seção 7.2 do CLAUDE.md para descobrir em que TPS o
+*injetor* satura sozinho, e ignora todos os demais parâmetros.
+
+O caminho é o mais curto possível: nem o gerador pseudoaleatório é consultado.
+
+### 4.7 Registro da configuração dos dois processos
+
+A seção 5.4 do CLAUDE.md exige as flags dos **dois** processos no
+`summary.json`. Transcrevê-las à mão seria a parte mais frágil da cadeia de
+auditoria, então o próprio autorizador as grava:
+
+```sh
+authorizer --latency-base 20ms --config-out autorizador.json
+injector   --sut-config autorizador.json
+```
+
+O arquivo traz a configuração e o ambiente do autorizador — incluindo o
+`GOMAXPROCS` dele, que a seção 7.1 exige poder fixar por processo. O injetor o
+embute no `summary.json` como JSON aninhado, e não como texto, para que a
+análise leia os parâmetros do sistema sob teste diretamente.
+
+A troca passa por arquivo, e não pela rede: consultar o autorizador durante a
+rodada acrescentaria um caminho de código ao sistema sob teste, e o experimento
+depende de esse caminho ser o mais simples possível.
+
+Se o arquivo não for informado ou não puder ser lido, a rodada **não é
+abortada** — abortar custaria a medição inteira. A ausência fica registrada no
+`summary.json` como tal, e a análise distingue uma rodada com a configuração do
+sistema sob teste de uma sem.
 
 ---
 

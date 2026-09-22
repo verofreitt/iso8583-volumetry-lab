@@ -138,7 +138,15 @@ type Ambiente struct {
 	RelogioResolucaoNS int64             `json:"relogio_resolucao_ns"`
 	LinhaDeComando     string            `json:"linha_de_comando"`
 	FlagsInjetor       map[string]string `json:"flags_injetor"`
-	ConfigAutorizador  string            `json:"config_autorizador"`
+
+	// ConfigAutorizador e o conteudo do arquivo gravado pelo autorizador com
+	// --config-out. Fica aninhado como JSON, e nao como texto, para que a
+	// analise possa ler os parametros do sistema sob teste diretamente.
+	//
+	// A secao 5.4 do CLAUDE.md exige as flags dos dois processos no resultado.
+	// Transcrever as do autorizador a mao seria a parte mais fragil da cadeia
+	// de auditoria, entao o proprio autorizador as grava.
+	ConfigAutorizador json.RawMessage `json:"config_autorizador"`
 }
 
 // CapturarAmbiente le o ambiente do processo corrente.
@@ -151,10 +159,14 @@ type Ambiente struct {
 // A fonte e a resolucao do relogio tambem entram no bloco. Uma latencia da
 // ordem da resolucao do relogio nao e mensuravel, e o artigo precisa declarar
 // esse piso em vez de apresentar numeros abaixo dele.
-func CapturarAmbiente(flags map[string]string, configAutorizador string) Ambiente {
+func CapturarAmbiente(flags map[string]string, configAutorizador json.RawMessage) Ambiente {
 	gogc := os.Getenv("GOGC")
 	if gogc == "" {
 		gogc = "100 (padrao, nao definido no ambiente)"
+	}
+
+	if len(configAutorizador) == 0 {
+		configAutorizador = json.RawMessage(`"nao informado: execute o autorizador com --config-out"`)
 	}
 
 	return Ambiente{

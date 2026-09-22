@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -46,7 +47,7 @@ type opcoes struct {
 	repeticao  int
 	semente    int64
 	resultados string
-	sut        string
+	sutConfig  string
 }
 
 func main() {
@@ -61,7 +62,7 @@ func main() {
 	flag.IntVar(&o.repeticao, "rep", 1, "numero da repeticao, usado no nome da pasta de saida")
 	flag.Int64Var(&o.semente, "seed", 1, "semente da ordem de consumo da massa")
 	flag.StringVar(&o.resultados, "results", "results", "raiz onde a pasta da rodada e criada")
-	flag.StringVar(&o.sut, "sut", "", "linha de comando do autorizador, registrada no summary.json")
+	flag.StringVar(&o.sutConfig, "sut-config", "", "arquivo gravado pelo autorizador com --config-out, embutido no summary.json")
 	flag.Parse()
 
 	if err := executar(o); err != nil {
@@ -117,7 +118,7 @@ func executar(o opcoes) error {
 			Semente:            o.semente,
 		},
 		agendamento(res, o.tps),
-		metrics.CapturarAmbiente(flagsInformadas(), o.sut),
+		metrics.CapturarAmbiente(flagsInformadas(), configDoAutorizador(o.sutConfig)),
 	)
 	if err != nil {
 		return fmt.Errorf("consolidando a rodada: %w", err)
@@ -163,6 +164,30 @@ func agendamento(res ratelimit.Resultado, tps float64) metrics.Agendamento {
 		AtrasoMaximoUS:  res.AtrasoMaximo.Microseconds(),
 		InjetorSaturado: res.AtrasoMedio > intervalo,
 	}
+}
+
+// configDoAutorizador le o arquivo gravado pelo autorizador com --config-out.
+//
+// A leitura falha em silencio de proposito: a ausencia do arquivo e registrada
+// no summary.json como tal, e abortar a rodada por causa dela custaria a
+// medicao inteira. A analise consegue distinguir uma rodada com a configuracao
+// do sistema sob teste de uma sem.
+func configDoAutorizador(caminho string) json.RawMessage {
+	if caminho == "" {
+		return nil
+	}
+
+	dados, err := os.ReadFile(caminho)
+	if err != nil {
+		log.Printf("aviso: nao foi possivel ler %s: %v", caminho, err)
+		return nil
+	}
+	if !json.Valid(dados) {
+		log.Printf("aviso: %s nao contem JSON valido", caminho)
+		return nil
+	}
+
+	return json.RawMessage(dados)
 }
 
 // flagsInformadas devolve todas as flags do injetor com seus valores efetivos,

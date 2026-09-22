@@ -25,7 +25,8 @@ func rodadaDeTeste(tps float64, totais, descartadas int) Rodada {
 }
 
 func ambienteDeTeste() Ambiente {
-	return CapturarAmbiente(map[string]string{"tps": "10"}, "authorizer --latency-base 5ms")
+	return CapturarAmbiente(map[string]string{"tps": "10"},
+		json.RawMessage(`{"config":{"latency-base":"5ms"}}`))
 }
 
 // TestEstatisticasPercentis confirma que os percentis vem do histograma sobre
@@ -274,7 +275,7 @@ func TestAmbienteCompleto(t *testing.T) {
 	if a.LinhaDeComando == "" {
 		t.Error("LinhaDeComando vazia")
 	}
-	if a.ConfigAutorizador == "" {
+	if len(a.ConfigAutorizador) == 0 {
 		t.Error("ConfigAutorizador vazia")
 	}
 	if len(a.FlagsInjetor) == 0 {
@@ -322,6 +323,20 @@ func TestEscreverJSONContemBlocos(t *testing.T) {
 	// o arquivo e indentado para permitir comparacao entre rodadas com diff
 	if !strings.Contains(buf.String(), "\n  \"rodada\"") {
 		t.Error("summary.json deveria estar indentado")
+	}
+}
+
+// TestAmbienteSemConfigDoAutorizador confirma que a ausencia do arquivo vira
+// um registro explicito, e nao um campo vazio que passaria despercebido.
+func TestAmbienteSemConfigDoAutorizador(t *testing.T) {
+	a := CapturarAmbiente(map[string]string{"tps": "10"}, nil)
+
+	var texto string
+	if err := json.Unmarshal(a.ConfigAutorizador, &texto); err != nil {
+		t.Fatalf("config_autorizador ausente deveria ser uma string JSON: %v", err)
+	}
+	if !strings.Contains(texto, "nao informado") {
+		t.Errorf("config_autorizador = %q, esperado registro explicito de ausencia", texto)
 	}
 }
 

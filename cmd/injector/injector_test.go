@@ -427,7 +427,7 @@ func TestRodadaContaRecusasSeparadamente(t *testing.T) {
 	resumo, err := coletor.Resumir(
 		metrics.Rodada{TPSAlvo: 100, ChegadasTotais: res.Chegadas},
 		agendamento(res, 100),
-		metrics.CapturarAmbiente(nil, ""),
+		metrics.CapturarAmbiente(nil, nil),
 	)
 	if err != nil {
 		t.Fatalf("Resumir: %v", err)
@@ -525,7 +525,8 @@ func TestRodadaEscreveArquivos(t *testing.T) {
 			Conexoes: 4, Repeticao: 2, Semente: 7,
 		},
 		agendamento(res, 100),
-		metrics.CapturarAmbiente(map[string]string{"tps": "100"}, "authorizer (sem flags)"),
+		metrics.CapturarAmbiente(map[string]string{"tps": "100"},
+			json.RawMessage(`{"config":{"latency-base":"0s"}}`)),
 	)
 	if err != nil {
 		t.Fatalf("Resumir: %v", err)
@@ -631,7 +632,7 @@ func resumoDeTeste(t *testing.T, tps float64, chegadas, descartadas int, de39 st
 			AtrasoMaximoUS:  (atrasoMedio * 10).Microseconds(),
 			InjetorSaturado: atrasoMedio > intervalo,
 		},
-		metrics.CapturarAmbiente(nil, ""),
+		metrics.CapturarAmbiente(nil, nil),
 	)
 	if err != nil {
 		t.Fatalf("Resumir: %v", err)
@@ -696,5 +697,61 @@ func TestRelatarAvisaSobreSaturacaoDoInjetor(t *testing.T) {
 	}
 	if !strings.Contains(saida.String(), "DE 39         : 51=100") {
 		t.Errorf("esperada distribuicao de DE 39:\n%s", saida.String())
+	}
+}
+
+// TestConfigDoAutorizador cobre a ponte entre os dois processos: o autorizador
+// grava a propria configuracao, o injetor a embute no summary.json.
+func TestConfigDoAutorizador(t *testing.T) {
+	dir := t.TempDir()
+
+	valido := filepath.Join(dir, "valido.json")
+	conteudo := `{"config":{"latency-base":"5ms","seed":99},"ambiente":{"gomaxprocs":4}}`
+	if err := os.WriteFile(valido, []byte(conteudo), 0o644); err != nil {
+		t.Fatalf("escrevendo: %v", err)
+	}
+
+	invalido := filepath.Join(dir, "invalido.json")
+	if err := os.WriteFile(invalido, []byte("isto nao e json"), 0o644); err != nil {
+		t.Fatalf("escrevendo: %v", err)
+	}
+
+	casos := map[string]struct {
+		caminho string
+		nulo    bool
+	}{
+		"arquivo valido":      {valido, false},
+		"caminho vazio":       {"", true},
+		"arquivo inexistente": {filepath.Join(dir, "nao-existe.json"), true},
+		"json invalido":       {invalido, true},
+	}
+
+	for nome, c := range casos {
+		t.Run(nome, func(t *testing.T) {
+			got := configDoAutorizador(c.caminho)
+			if c.nulo {
+				if got != nil {
+					t.Errorf("esperado nil, obtido %s", got)
+				}
+				return
+			}
+			if string(got) != conteudo {
+				t.Errorf("conteudo = %s, esperado %s", got, conteudo)
+			}
+		})
+	}
+}
+
+// TestConfigDoAutorizadorAusenteNaoAbortaARodada protege a decisao de nao
+// falhar quando o arquivo nao existe: abortar custaria a medicao inteira.
+func TestConfigDoAutorizadorAusenteNaoAbortaARodada(t *testing.T) {
+	amb := metrics.CapturarAmbiente(nil, configDoAutorizador("/caminho/que/nao/existe.json"))
+
+	var texto string
+	if err := json.Unmarshal(amb.ConfigAutorizador, &texto); err != nil {
+		t.Fatalf("config_autorizador deveria registrar a ausencia como string: %v", err)
+	}
+	if !strings.Contains(texto, "nao informado") {
+		t.Errorf("config_autorizador = %q", texto)
 	}
 }
