@@ -26,6 +26,8 @@ import (
 	"math"
 	"sync"
 	"time"
+
+	"github.com/verofreitt/iso8583-volumetry-lab/internal/clock"
 )
 
 // Chegada descreve uma chegada agendada.
@@ -116,7 +118,7 @@ func (a *Aberto) deslocamento(i int) time.Duration {
 // Cancelar ctx interrompe o agendamento de novas chegadas, mas as chamadas ja
 // em voo sao aguardadas.
 func (a *Aberto) Executar(ctx context.Context, fn func(Chegada)) Resultado {
-	inicio := time.Now()
+	inicio := clock.Agora()
 
 	// os atrasos sao calculados no laco de agendamento, que e uma unica
 	// goroutine: nao ha concorrencia sobre estes contadores.
@@ -146,7 +148,7 @@ func (a *Aberto) Executar(ctx context.Context, fn func(Chegada)) Resultado {
 
 		// o atraso e medido antes de disparar a goroutine: mede o quanto o
 		// agendador se desviou do plano, nao o custo da chamada.
-		if atraso := time.Since(agendado); atraso > 0 {
+		if atraso := clock.Desde(agendado); atraso > 0 {
 			atrasoTotal += atraso
 			if atraso > atrasoMax {
 				atrasoMax = atraso
@@ -170,7 +172,7 @@ func (a *Aberto) Executar(ctx context.Context, fn func(Chegada)) Resultado {
 
 	return Resultado{
 		Inicio:       inicio,
-		Fim:          time.Now(),
+		Fim:          clock.Agora(),
 		Chegadas:     chegadas,
 		AtrasoMaximo: atrasoMax,
 		AtrasoMedio:  atrasoMedio,
@@ -180,8 +182,17 @@ func (a *Aberto) Executar(ctx context.Context, fn func(Chegada)) Resultado {
 // aguardarAte espera ate o instante informado. Devolve false se ctx foi
 // cancelado. Se o instante ja passou, retorna imediatamente sem dormir: a
 // chegada e disparada com atraso, e o atraso e contabilizado.
+//
+// A comparacao usa clock.Ate, e nao time.Until: o instante agendado esta na
+// base do relogio de alta resolucao, e time.Until o compararia com time.Now,
+// misturando duas bases de tempo distintas.
+//
+// A espera em si continua sujeita a granularidade do temporizador do sistema
+// operacional, que e da ordem de centenas de microssegundos. E dela que vem o
+// teto de injecao, e e por isso que o atraso de agendamento e medido e
+// reportado: o relogio de alta resolucao corrige a medicao, nao o agendamento.
 func aguardarAte(ctx context.Context, temporizador *time.Timer, instante time.Time) bool {
-	espera := time.Until(instante)
+	espera := clock.Ate(instante)
 	if espera <= 0 {
 		return ctx.Err() == nil
 	}

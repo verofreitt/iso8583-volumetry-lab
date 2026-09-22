@@ -13,16 +13,16 @@ latência e vazão que sustentem a análise do artigo.
 
 ## Estado
 
-Implementado até o **passo 3** da ordem de execução: o injetor aplica uma taxa
-de chegada fixa em modelo aberto. Ainda sem coleta de latência com histograma,
-warm-up, semente ou arquivos de saída.
+Implementado até o **passo 4** da ordem de execução: o injetor aplica uma taxa
+de chegada fixa em modelo aberto, mede a latência de cada requisição com
+correção de omissão coordenada e grava `raw.csv` e `summary.json`.
 
 | Passo | Componente | Estado |
 |-------|-----------|--------|
 | 1 | Autorizador responde a uma `0100` | **concluído** |
 | 2 | Injetor envia `0100` e lê a resposta | **concluído** |
 | 3 | Controle de taxa em modelo aberto | **concluído** |
-| 4 | Coleta de latência, `raw.csv` e `summary.json` | pendente |
+| 4 | Coleta de latência, `raw.csv` e `summary.json` | **concluído** |
 | 5 | Flags de configuração do mock | pendente |
 | 6 | Baseline de calibração | pendente |
 | 7 | Execução dos experimentos | pendente |
@@ -81,67 +81,115 @@ Encerre com `Ctrl+C`.
 Com o autorizador em execução em outro terminal:
 
 ```sh
-go run ./cmd/injector -tps 10 -duration 5s
+go run ./cmd/injector -tps 200 -duration 20s -warmup 5s -conns 16
 ```
 
 | Flag | Padrão | Significado |
 |------|--------|-------------|
 | `-tps` | `10` | taxa de chegada pretendida, em transações por segundo |
-| `-duration` | `10s` | duração da rodada |
+| `-duration` | `10s` | duração da rodada, incluindo o warm-up |
+| `-warmup` | `0s` | período inicial descartado da análise |
 | `-conns` | `8` | conexões persistentes mantidas com o autorizador |
+| `-rep` | `1` | número da repetição, usado no nome da pasta de saída |
+| `-seed` | `1` | semente da ordem de consumo da massa |
+| `-results` | `results` | raiz onde a pasta da rodada é criada |
+| `-sut` | — | linha de comando do autorizador, registrada no `summary.json` |
 
-Saída de uma rodada a 10 TPS por 5 s:
+> A flag `-seed` é registrada no `summary.json` mas ainda **não tem efeito**:
+> a massa sintética (`internal/massa`) não existe, e todas as requisições usam
+> os mesmos valores. O campo já está no esquema para que ele não mude quando a
+> massa chegar.
+
+Saída de uma rodada a 200 TPS:
 
 ```
-alvo          : 10 TPS por 5s, 8 conexoes
-chegadas      : 50 (janela de 5s)
-respondidas   : 50 (aprovadas 50, recusadas 0)
-erros         : 0
-vazao         : 10.00 TPS (100.0% do alvo)
-tempo total   : 4.901s (ate a ultima resposta)
-atraso medio  : 659µs (agendamento do injetor)
-atraso maximo : 3.562ms (agendamento do injetor)
+alvo          : 200 TPS por 20s, 16 conexoes
+chegadas      : 3000 medidas de 4000 (warm-up de 5s descartou 1000)
+respondidas   : 3000 (aprovadas 3000, recusadas 0)
+falhas        : 0 erros de transporte, 0 timeouts
+vazao         : 200.00 TPS (100.0% do alvo)
+DE 39         : 00=3000
+
+latencia (us)       servico   resposta
+media                1677.2     3234.5
+mediana                 270        909
+p95                    7371      13423
+p99                   31455      51711
+p99.9                 73151     103871
+maximo                73663     115519
+desvio-padrao        5959.4     9249.9
+
+atraso de agendamento: medio 1206 us, maximo 76037 us
+
+resultados em results60922T093145-200tps-2
 ```
 
-Saída em `stdout`, log em `stderr`. `Ctrl+C` interrompe o agendamento de novas
-chegadas, mas as requisições já em voo são aguardadas antes do resumo.
+`Ctrl+C` interrompe o agendamento de novas chegadas, mas as requisições já em
+voo são aguardadas antes do resumo e os arquivos são gravados normalmente.
 
-### Como ler o resumo
+## Arquivos de saída
 
-**vazão alcançada vs. alvo** é a métrica mais importante. Ela é calculada
-sobre a *janela de chegadas*, não sobre o tempo decorrido até a última
-resposta: as N chegadas ocupam os instantes 0, 1/TPS, …, (N−1)/TPS, uma janela
-que termina um intervalo antes do fim da rodada. Usar o tempo decorrido como
-denominador produziria vazão acima de 100% do alvo, o que é impossível em
-modelo aberto.
+Uma pasta por rodada, em `results/<timestamp>-<tps>-<rep>/`.
 
-**atraso de agendamento** mede o quanto o injetor se desviou do plano. O
-*médio* é o diagnóstico de saturação do próprio gerador de carga; o *máximo* é
-pior caso e sobe com qualquer pausa do coletor de lixo ou sobressalto do
-temporizador do sistema operacional. Quando o atraso médio ultrapassa o
-intervalo entre chegadas, a rodada passa a medir o injetor e o resumo emite um
-aviso explícito.
+**`raw.csv`** — uma linha por requisição medida:
 
-**recusas e erros são contados separadamente.** Uma recusa é resposta de
-negócio; um erro de transporte ou timeout é falha de desempenho. Misturar os
-dois invalidaria a análise.
+```
+stan, ts_agendado, ts_envio, ts_resposta,
+latencia_servico_us, latencia_resposta_us, de39, erro_transporte
+```
 
-> **Nenhum número aqui é resultado de experimento ainda.** Não há warm-up,
-> semente, histograma de latência nem registro do ambiente. O passo 4 introduz
-> a coleta de latência com HdrHistogram e a escrita de `raw.csv` e
-> `summary.json`.
+**`summary.json`** — o resumo consolidado mais o bloco de ambiente completo:
+versão do Go, `GOMAXPROCS`, número de CPUs, sistema operacional, `GOGC`, fonte
+e resolução do relógio, todas as flags do injetor e a linha de comando exata.
 
-### Teto preliminar do injetor
+### Como ler as duas latências
 
-Nesta máquina, o atraso médio de agendamento se estabiliza em torno de
+`latencia_servico` é o tempo entre o envio efetivo e a resposta — é a latência
+que o autorizador exibe. `latencia_resposta` parte do **instante de chegada
+pretendido**, e é a que o cliente observa.
+
+A diferença entre as duas é a correção de omissão coordenada. Se o injetor
+atrasou por contenção interna, esse atraso pertence à experiência do cliente e
+precisa aparecer no número. Reportar apenas a primeira subestima
+sistematicamente o que o sistema entrega sob carga — na rodada acima, a mediana
+sobe de 270 µs para 909 µs e o p99 de 31 ms para 51 ms.
+
+### Como ler a vazão
+
+**Vazão alcançada vs. alvo** é a métrica mais importante. É calculada sobre a
+*janela de chegadas*, não sobre o tempo decorrido até a última resposta: as N
+chegadas ocupam os instantes 0, 1/TPS, …, (N−1)/TPS, uma janela que termina um
+intervalo antes do fim da rodada. Usar o tempo decorrido produziria vazão acima
+de 100% do alvo, o que é impossível em modelo aberto.
+
+**Recusas, erros de transporte e timeouts são contados separadamente.** Uma
+recusa é resposta de negócio; um timeout é falha de desempenho; um erro de
+transporte é falha de infraestrutura. Misturá-los invalidaria a análise.
+
+**O atraso de agendamento** mede o quanto o injetor se desviou do plano. O
+médio é o diagnóstico de saturação do gerador de carga; o máximo é pior caso e
+sobe com qualquer pausa do coletor de lixo. Quando o médio ultrapassa o
+intervalo entre chegadas, o resumo emite um aviso explícito e a rodada passa a
+medir o injetor.
+
+## Limites conhecidos do aparato
+
+Dois pisos desta máquina, apurados de forma exploratória e a serem
+quantificados com rigor no passo 6:
+
+**Teto de injeção, ~2000 TPS.** O atraso médio de agendamento se estabiliza em
 500–660 µs independentemente da taxa pedida — é o piso de granularidade do
-temporizador do sistema operacional, não contenção do injetor. Isso implica um
-teto de injeção próximo de **2000 TPS**, taxa em que o intervalo entre chegadas
-cruza esse piso.
+temporizador do sistema operacional. Acima desse ponto o injetor entrega o
+número correto de chegadas, mas não nos instantes pretendidos.
 
-É uma observação preliminar, colhida com o autorizador respondendo sem latência
-artificial. O passo 6 formaliza a calibração e o valor apurado vai para o artigo
-como limite declarado do aparato.
+**Piso de ruído no p99, dezenas de milissegundos.** Com o autorizador
+respondendo sem latência artificial, o p99 da latência de serviço fica em
+25,7 ms a 20 TPS e 11,6 ms a 200 TPS. A cauda não cresce com a carga, o que
+descarta enfileiramento: é ruído ambiente da máquina. O p99 de uma rodada só
+diz algo sobre o autorizador se a latência configurada estiver bem acima desse
+piso.
+
+Ambos estão detalhados em [docs/experimento.md](docs/experimento.md).
 
 ## Verificação manual
 
@@ -232,7 +280,8 @@ cmd/authorizer/      sistema sob teste — autorizador mock
 cmd/injector/        gerador de carga
 internal/iso8583/    spec, montagem, parse e enquadramento das mensagens
 internal/ratelimit/  controle de taxa em modelo aberto
-internal/metrics/    coleta de latência e consolidação (pendente)
+internal/clock/      relógio monotônico de alta resolução
+internal/metrics/    coleta de latência e consolidação
 internal/massa/      leitura dos CSVs de entrada (pendente)
 data/                massa sintética
 results/             saída bruta, uma pasta por rodada

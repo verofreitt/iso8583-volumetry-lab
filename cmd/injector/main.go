@@ -1,30 +1,31 @@
 // Command injector e o gerador de carga do experimento.
 //
-// Este e o passo 3 da ordem de execucao descrita em CLAUDE.md: controle de
-// taxa em modelo aberto. As chegadas sao agendadas pelo relogio,
-// independentemente das conclusoes, e cada envio ocorre em sua propria
-// goroutine.
+// Este e o passo 4 da ordem de execucao descrita em CLAUDE.md: coleta de
+// latencia e escrita de raw.csv e summary.json. As chegadas sao agendadas em
+// modelo aberto, cada envio ocorre em sua propria goroutine, e a latencia e
+// registrada a partir do instante de chegada pretendido.
 //
-// Ainda nao ha coleta de latencia com histograma, warm-up, semente, leitura de
-// massa nem escrita de raw.csv e summary.json: esses sao o passo 4. Os numeros
-// impressos aqui servem para verificar que a taxa pretendida esta sendo
-// aplicada, e nao como resultado de experimento.
+// Ainda nao implementado: leitura da massa sintetica dos CSVs de entrada
+// (internal/massa) e as flags de configuracao do autorizador, que e o passo 5.
 package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net"
 	"os"
 	"os/signal"
-	"sync/atomic"
 	"time"
 
 	moov "github.com/moov-io/iso8583"
+	"github.com/verofreitt/iso8583-volumetry-lab/internal/clock"
 	iso "github.com/verofreitt/iso8583-volumetry-lab/internal/iso8583"
+	"github.com/verofreitt/iso8583-volumetry-lab/internal/metrics"
 	"github.com/verofreitt/iso8583-volumetry-lab/internal/ratelimit"
 )
 
@@ -37,91 +38,206 @@ const (
 	prazo = 5 * time.Second
 )
 
-// contadores acompanha o desfecho de cada requisicao.
-//
-// Recusas de negocio e falhas de transporte sao contadas separadamente. Uma
-// recusa e uma resposta valida do autorizador; um timeout e falha de
-// desempenho. Somar os dois invalidaria a analise.
-type contadores struct {
-	aprovadas atomic.Int64
-	recusadas atomic.Int64
-	erros     atomic.Int64
+type opcoes struct {
+	tps        float64
+	duracao    time.Duration
+	warmup     time.Duration
+	conexoes   int
+	repeticao  int
+	semente    int64
+	resultados string
+	sut        string
 }
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	log.SetOutput(os.Stderr)
 
-	tps := flag.Float64("tps", 10, "taxa de chegada pretendida, em transacoes por segundo")
-	duracao := flag.Duration("duration", 10*time.Second, "duracao da rodada")
-	conexoes := flag.Int("conns", 8, "conexoes persistentes mantidas com o autorizador")
+	var o opcoes
+	flag.Float64Var(&o.tps, "tps", 10, "taxa de chegada pretendida, em transacoes por segundo")
+	flag.DurationVar(&o.duracao, "duration", 10*time.Second, "duracao da rodada, incluindo o warm-up")
+	flag.DurationVar(&o.warmup, "warmup", 0, "periodo inicial descartado da analise")
+	flag.IntVar(&o.conexoes, "conns", 8, "conexoes persistentes mantidas com o autorizador")
+	flag.IntVar(&o.repeticao, "rep", 1, "numero da repeticao, usado no nome da pasta de saida")
+	flag.Int64Var(&o.semente, "seed", 1, "semente da ordem de consumo da massa")
+	flag.StringVar(&o.resultados, "results", "results", "raiz onde a pasta da rodada e criada")
+	flag.StringVar(&o.sut, "sut", "", "linha de comando do autorizador, registrada no summary.json")
 	flag.Parse()
 
-	agendador, err := ratelimit.NovoAberto(*tps, *duracao)
-	if err != nil {
-		log.Fatalf("configurando o agendador: %v", err)
+	if err := executar(o); err != nil {
+		log.Fatalf("%v", err)
+	}
+}
+
+func executar(o opcoes) error {
+	if o.warmup < 0 {
+		return fmt.Errorf("warmup nao pode ser negativo, recebido %v", o.warmup)
+	}
+	if o.warmup >= o.duracao {
+		return fmt.Errorf("warmup (%v) deve ser menor que a duracao (%v): nao sobraria nada para medir", o.warmup, o.duracao)
 	}
 
-	p, err := novoPool(endereco, *conexoes, prazo)
+	agendador, err := ratelimit.NovoAberto(o.tps, o.duracao)
 	if err != nil {
-		log.Fatalf("abrindo o pool: %v", err)
+		return fmt.Errorf("configurando o agendador: %w", err)
+	}
+
+	chegadas := agendador.Chegadas()
+	descartadas := chegadasDoWarmup(o.warmup, o.tps, chegadas)
+	coletor := metrics.NovoColetor(chegadas, descartadas)
+
+	p, err := novoPool(endereco, o.conexoes, prazo)
+	if err != nil {
+		return fmt.Errorf("abrindo o pool: %w", err)
 	}
 	defer p.fechar()
 
-	log.Printf("%d conexoes abertas com %s", *conexoes, endereco)
-	log.Printf("alvo de %g TPS por %v (%d chegadas previstas)", *tps, *duracao, agendador.Chegadas())
+	log.Printf("%d conexoes abertas com %s", o.conexoes, endereco)
+	log.Printf("alvo de %g TPS por %v (%d chegadas, %d descartadas no warm-up de %v)",
+		o.tps, o.duracao, chegadas, descartadas, o.warmup)
 
 	ctx, parar := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer parar()
 
-	var c contadores
 	res := agendador.Executar(ctx, func(ch ratelimit.Chegada) {
-		if err := requisitar(ctx, p, ch, &c); err != nil {
-			c.erros.Add(1)
-		}
+		coletor.Registrar(requisitar(ctx, p, ch))
 	})
 
-	relatar(os.Stdout, *tps, *duracao, *conexoes, res, &c, p.perdidasTotal())
+	resumo, err := coletor.Resumir(
+		metrics.Rodada{
+			Inicio:             res.Inicio,
+			Fim:                res.Fim,
+			TPSAlvo:            o.tps,
+			Duracao:            o.duracao.String(),
+			Warmup:             o.warmup.String(),
+			ChegadasDescartada: descartadas,
+			ChegadasTotais:     res.Chegadas,
+			Conexoes:           o.conexoes,
+			Repeticao:          o.repeticao,
+			Semente:            o.semente,
+		},
+		agendamento(res, o.tps),
+		metrics.CapturarAmbiente(flagsInformadas(), o.sut),
+	)
+	if err != nil {
+		return fmt.Errorf("consolidando a rodada: %w", err)
+	}
+
+	pasta, err := pastaDaRodada(o.resultados, res.Inicio, o.tps, o.repeticao)
+	if err != nil {
+		return err
+	}
+	if err := escreverResultados(pasta, coletor, resumo); err != nil {
+		return err
+	}
+
+	relatar(os.Stdout, resumo, p.perdidasTotal())
+	fmt.Fprintf(os.Stdout, "\nresultados em %s\n", pasta)
+	return nil
 }
 
-// requisitar executa uma troca completa para uma chegada agendada.
-func requisitar(ctx context.Context, p *pool, ch ratelimit.Chegada, c *contadores) error {
-	conn, err := p.adquirir(ctx)
-	if err != nil {
-		return err
+// chegadasDoWarmup devolve quantas chegadas iniciais pertencem ao warm-up.
+//
+// A chegada de indice i ocorre no instante i/TPS, entao pertencem ao warm-up
+// exatamente as de indice menor que warmup*TPS.
+func chegadasDoWarmup(warmup time.Duration, tps float64, chegadas int) int {
+	if warmup <= 0 || tps <= 0 {
+		return 0
+	}
+	n := int(math.Ceil(warmup.Seconds() * tps))
+	if n > chegadas {
+		n = chegadas
+	}
+	return n
+}
+
+// agendamento converte o resultado do agendador e decide se o injetor saturou.
+//
+// O criterio usa o atraso medio, nao o maximo: um unico sobressalto do
+// temporizador do sistema operacional ou uma pausa do coletor de lixo eleva o
+// maximo sem que o injetor tenha deixado de sustentar a taxa.
+func agendamento(res ratelimit.Resultado, tps float64) metrics.Agendamento {
+	intervalo := time.Duration(float64(time.Second) / tps)
+	return metrics.Agendamento{
+		AtrasoMedioUS:   res.AtrasoMedio.Microseconds(),
+		AtrasoMaximoUS:  res.AtrasoMaximo.Microseconds(),
+		InjetorSaturado: res.AtrasoMedio > intervalo,
+	}
+}
+
+// flagsInformadas devolve todas as flags do injetor com seus valores efetivos,
+// para o bloco de ambiente do summary.json.
+func flagsInformadas() map[string]string {
+	valores := map[string]string{}
+	flag.VisitAll(func(f *flag.Flag) {
+		valores[f.Name] = f.Value.String()
+	})
+	return valores
+}
+
+// requisitar executa uma troca completa e devolve o registro da medicao.
+//
+// Os instantes sao tomados em volta da troca. O de envio e capturado depois da
+// aquisicao da conexao, de modo que a espera pelo pool aparece na latencia de
+// resposta, que parte do instante agendado, mas nao na latencia de servico.
+// A diferenca entre as duas colunas e justamente o que o artigo discute.
+func requisitar(ctx context.Context, p *pool, ch ratelimit.Chegada) metrics.Registro {
+	req := requisicao(ch)
+	reg := metrics.Registro{
+		Indice:   ch.Indice,
+		STAN:     req.STAN,
+		Agendado: ch.Agendado,
 	}
 
-	resp, err := trocar(conn, requisicao(ch))
+	conn, err := p.adquirir(ctx)
 	if err != nil {
+		reg.Envio = clock.Agora()
+		reg.Erro = fmt.Sprintf("adquirindo conexao: %v", err)
+		return reg
+	}
+
+	reg.Envio = clock.Agora()
+	resp, err := trocar(conn, req)
+	if err != nil {
+		reg.Erro = err.Error()
+		reg.Timeout = ehTimeout(err)
 		// o fluxo pode ter ficado dessincronizado: a conexao nao volta ao pool
 		p.descartar(conn)
-		return err
+		return reg
 	}
+	reg.Resposta = clock.Agora()
 	p.devolver(conn)
 
 	de39, err := resp.GetString(39)
 	if err != nil {
-		return fmt.Errorf("lendo DE 39: %w", err)
+		reg.Erro = fmt.Sprintf("lendo DE 39: %v", err)
+		return reg
 	}
+	reg.DE39 = de39
 
-	if de39 == "00" {
-		c.aprovadas.Add(1)
-	} else {
-		c.recusadas.Add(1)
+	return reg
+}
+
+// ehTimeout distingue o esgotamento do prazo das demais falhas de transporte.
+// Um timeout e falha de desempenho; um erro de transporte e falha de
+// infraestrutura. O summary.json conta os dois separadamente.
+func ehTimeout(err error) bool {
+	if errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
+		return true
 	}
-	return nil
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 // requisicao monta a 0100 de uma chegada.
 //
 // O STAN deriva do indice da chegada, o que garante unicidade dentro da rodada
 // e permite conferir a correlacao entre requisicao e resposta. O campo tem
-// seis digitos, entao a numeracao reinicia a cada milhao de requisicoes; uma
-// rodada mais longa que isso precisaria de outra chave de correlacao, e o
+// seis digitos, entao a numeracao reinicia a cada milhao de requisicoes; o
 // limite esta registrado em docs/experimento.md.
 //
-// Os demais valores sao fixos. A variacao da massa entra no passo 4, com a
-// leitura dos CSVs de entrada e a semente que define a ordem de consumo.
+// Os demais valores sao fixos. A variacao da massa depende de internal/massa,
+// ainda nao implementado.
 func requisicao(ch ratelimit.Chegada) iso.Requisicao {
 	return iso.Requisicao{
 		PAN:                   "9999990000000014",
@@ -141,7 +257,7 @@ func requisicao(ch ratelimit.Chegada) iso.Requisicao {
 // trocar envia uma 0100 e devolve a 0110 recebida, conferindo a correlacao
 // pelo STAN.
 func trocar(conn net.Conn, req iso.Requisicao) (*moov.Message, error) {
-	if err := conn.SetDeadline(time.Now().Add(prazo)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(prazo)); err != nil { //nolint:forbidigo // prazo de socket usa o relogio do sistema
 		return nil, fmt.Errorf("definindo prazo: %w", err)
 	}
 
@@ -175,54 +291,65 @@ func trocar(conn net.Conn, req iso.Requisicao) (*moov.Message, error) {
 	return resp, nil
 }
 
-// relatar escreve o resumo da rodada.
-//
-// A vazao alcancada e calculada sobre a janela de chegadas, e nao sobre o
-// tempo decorrido ate a ultima resposta. As N chegadas de uma rodada ocupam os
-// instantes 0, 1/TPS, ..., (N-1)/TPS, ou seja, uma janela que termina um
-// intervalo antes do fim da rodada. Dividir pelo tempo decorrido produziria
-// vazao acima de 100% do alvo, o que e impossivel em modelo aberto: nenhuma
-// resposta pode ser contada antes de sua chegada ter sido agendada.
-//
-// Com a janela de chegadas como denominador, a vazao so fica abaixo do alvo
-// quando alguma requisicao deixou de ser respondida, que e exatamente o sinal
-// de saturacao que a metrica deve capturar.
-func relatar(w io.Writer, tps float64, duracao time.Duration, conexoes int,
-	res ratelimit.Resultado, c *contadores, perdidas int) {
-
-	aprovadas := c.aprovadas.Load()
-	recusadas := c.recusadas.Load()
-	erros := c.erros.Load()
-	respondidas := aprovadas + recusadas
-
-	janela := time.Duration(float64(res.Chegadas) / tps * float64(time.Second))
-	decorrido := res.Fim.Sub(res.Inicio)
-
-	var alcancado float64
-	if janela > 0 {
-		alcancado = float64(respondidas) / janela.Seconds()
-	}
-
-	fmt.Fprintf(w, "alvo          : %g TPS por %v, %d conexoes\n", tps, duracao, conexoes)
-	fmt.Fprintf(w, "chegadas      : %d (janela de %v)\n", res.Chegadas, janela.Round(time.Millisecond))
-	fmt.Fprintf(w, "respondidas   : %d (aprovadas %d, recusadas %d)\n", respondidas, aprovadas, recusadas)
-	fmt.Fprintf(w, "erros         : %d\n", erros)
+// relatar escreve o resumo da rodada em formato legivel. O conteudo
+// integral vai para o summary.json.
+func relatar(w io.Writer, r metrics.Resumo, perdidas int) {
+	fmt.Fprintf(w, "alvo          : %g TPS por %v, %d conexoes\n",
+		r.Rodada.TPSAlvo, r.Rodada.Duracao, r.Rodada.Conexoes)
+	fmt.Fprintf(w, "chegadas      : %d medidas de %d (warm-up de %v descartou %d)\n",
+		r.Vazao.ChegadasMedidas, r.Rodada.ChegadasTotais, r.Rodada.Warmup, r.Rodada.ChegadasDescartada)
+	fmt.Fprintf(w, "respondidas   : %d (aprovadas %d, recusadas %d)\n",
+		r.Vazao.Respondidas, r.Desfechos.Aprovadas, r.Desfechos.Recusadas)
+	fmt.Fprintf(w, "falhas        : %d erros de transporte, %d timeouts\n",
+		r.Desfechos.ErrosTransporte, r.Desfechos.Timeouts)
 	if perdidas > 0 {
 		fmt.Fprintf(w, "conexoes perdidas: %d\n", perdidas)
 	}
-	fmt.Fprintf(w, "vazao         : %.2f TPS (%.1f%% do alvo)\n", alcancado, 100*alcancado/tps)
-	fmt.Fprintf(w, "tempo total   : %v (ate a ultima resposta)\n", decorrido.Round(time.Millisecond))
-	fmt.Fprintf(w, "atraso medio  : %v (agendamento do injetor)\n", res.AtrasoMedio.Round(time.Microsecond))
-	fmt.Fprintf(w, "atraso maximo : %v (agendamento do injetor)\n", res.AtrasoMaximo.Round(time.Microsecond))
+	fmt.Fprintf(w, "vazao         : %.2f TPS (%.1f%% do alvo)\n",
+		r.Vazao.AlcancadoTPS, r.Vazao.PercentualDoAlvo)
 
-	// o criterio de saturacao usa o atraso medio, nao o maximo. Um unico
-	// sobressalto do temporizador ou uma pausa do coletor de lixo eleva o
-	// maximo sem que o injetor tenha deixado de sustentar a taxa; ja um atraso
-	// medio da ordem do intervalo entre chegadas significa atraso sistematico.
-	intervalo := time.Duration(float64(time.Second) / tps)
-	if res.AtrasoMedio > intervalo {
-		fmt.Fprintf(w, "\nAVISO: o atraso medio de agendamento (%v) excedeu o intervalo entre\n", res.AtrasoMedio.Round(time.Microsecond))
-		fmt.Fprintf(w, "chegadas (%v). O injetor nao sustentou a taxa pretendida; esta rodada\n", intervalo.Round(time.Microsecond))
-		fmt.Fprintf(w, "mede o injetor, nao o autorizador.\n")
+	if len(r.Desfechos.DistribuicaoDE39) > 0 {
+		fmt.Fprintf(w, "DE 39         :")
+		for _, c := range r.Desfechos.CodigosDE39() {
+			fmt.Fprintf(w, " %s=%d", c, r.Desfechos.DistribuicaoDE39[c])
+		}
+		fmt.Fprintln(w)
+	}
+
+	fmt.Fprintf(w, "\n%-16s %10s %10s\n", "latencia (us)", "servico", "resposta")
+	linhas := []struct {
+		rotulo string
+		s, r   any
+	}{
+		{"media", r.LatenciaServico.MediaUS, r.LatenciaResposta.MediaUS},
+		{"mediana", r.LatenciaServico.MedianaUS, r.LatenciaResposta.MedianaUS},
+		{"p95", r.LatenciaServico.P95US, r.LatenciaResposta.P95US},
+		{"p99", r.LatenciaServico.P99US, r.LatenciaResposta.P99US},
+		{"p99.9", r.LatenciaServico.P999US, r.LatenciaResposta.P999US},
+		{"maximo", r.LatenciaServico.MaximoUS, r.LatenciaResposta.MaximoUS},
+		{"desvio-padrao", r.LatenciaServico.DesvioPadr, r.LatenciaResposta.DesvioPadr},
+	}
+	for _, l := range linhas {
+		fmt.Fprintf(w, "%-16s %10s %10s\n", l.rotulo, numero(l.s), numero(l.r))
+	}
+
+	fmt.Fprintf(w, "\natraso de agendamento: medio %d us, maximo %d us\n",
+		r.Agendamento.AtrasoMedioUS, r.Agendamento.AtrasoMaximoUS)
+
+	if r.Agendamento.InjetorSaturado {
+		fmt.Fprintf(w, "\nAVISO: o atraso medio de agendamento excedeu o intervalo entre chegadas.\n")
+		fmt.Fprintf(w, "O injetor nao sustentou a taxa pretendida; esta rodada mede o injetor,\n")
+		fmt.Fprintf(w, "nao o autorizador.\n")
+	}
+}
+
+func numero(v any) string {
+	switch n := v.(type) {
+	case int64:
+		return fmt.Sprintf("%d", n)
+	case float64:
+		return fmt.Sprintf("%.1f", n)
+	default:
+		return fmt.Sprintf("%v", v)
 	}
 }

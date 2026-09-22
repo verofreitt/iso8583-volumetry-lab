@@ -3,8 +3,8 @@
 Documento de registro do aparato. Cada decisão que afeta a interpretação dos
 números medidos é registrada aqui, com a justificativa.
 
-Estado atual: **passo 3 da ordem de execução** (controle de taxa em modelo
-aberto). As seções de ambiente, procedimento de execução e
+Estado atual: **passo 4 da ordem de execução** (coleta de latência e escrita
+de `raw.csv` e `summary.json`). As seções de ambiente, procedimento de execução e
 resultados são preenchidas conforme os passos seguintes forem concluídos.
 
 ---
@@ -166,9 +166,14 @@ conexões simultâneas e semente.
 
 ## 5. Injetor
 
-**Estado atual (passo 3):** aplica uma taxa de chegada fixa em modelo aberto,
-por uma duração configurável. Sem coleta de latência com histograma, sem
-warm-up, sem semente e sem arquivos de saída — esses são o passo 4.
+**Estado atual (passo 4):** aplica uma taxa de chegada fixa em modelo aberto,
+coleta a latência de cada requisição com correção de omissão coordenada, e
+grava `raw.csv` e `summary.json`.
+
+Pendente: a leitura da massa sintética dos CSVs de entrada (`internal/massa`).
+Enquanto ela não existe, todas as requisições usam os mesmos valores, e a flag
+`-seed` é registrada no `summary.json` sem ter efeito observável. O campo já
+existe no esquema para que ele não mude quando a massa chegar.
 
 ### 5.1 Origem dos campos temporais
 
@@ -258,14 +263,7 @@ para elevar o máximo sem que o injetor tenha deixado de sustentar a taxa. Com o
 critério pelo máximo, o aviso viraria ruído em qualquer rodada de taxa alta e
 perderia utilidade. Coberto por `TestRelatarNaoAvisaPorPicoIsolado`.
 
-### 5.5 O que ainda não é medição
-
-Nenhum número produzido pelo injetor até aqui é resultado de experimento. Não
-há warm-up, semente, histograma de latência nem registro do ambiente de
-execução. A latência por transação, com correção de omissão coordenada e
-escrita de `raw.csv` e `summary.json`, é o passo 4.
-
-### 5.6 Limite da correlação por STAN
+### 5.5 Limite da correlação por STAN
 
 O STAN deriva do índice da chegada, o que garante unicidade dentro da rodada e
 permite conferir a correspondência entre requisição e resposta — a conferência
@@ -276,7 +274,7 @@ requisições. Uma rodada mais longa que isso precisaria de outra chave de
 correlação. A 2000 TPS, o limite corresponde a cerca de 8 minutos de rodada
 contínua.
 
-### 5.7 Limite do teste automatizado
+### 5.6 Limite do teste automatizado
 
 O teste ponta a ponta do injetor sobe um servidor que reproduz o comportamento
 do autorizador usando o **mesmo caminho de código** de montagem da resposta —
@@ -286,6 +284,119 @@ Um erro comum às duas pontas, portanto, passaria despercebido por ele.
 Essa lacuna é coberta pela verificação manual documentada no README, que envia
 bytes crus sem depender de nenhum código deste repositório e confere o formato
 de fio de forma independente.
+
+### 5.7 Coleta de latência
+
+A coleta não usa travas. O número de chegadas é conhecido antes do início da
+rodada, então cada requisição escreve em uma posição própria de um vetor
+pré-alocado, indexada pelo índice da chegada. Posições distintas de um slice
+são memória independente, e não há corrida.
+
+A alternativa usual — um mutex em volta do histograma no caminho de cada
+requisição — introduziria contenção exatamente no ponto que o experimento
+pretende medir. O histograma é montado ao final, a partir dos registros brutos,
+que são também o conteúdo do `raw.csv`.
+
+Os percentis vêm de um HdrHistogram sobre os valores individuais, com faixa de
+1 µs a 60 s e três dígitos significativos. Nunca são calculados sobre média
+móvel ou amostragem: as duas práticas destroem a cauda, que é o objeto do
+experimento.
+
+### 5.8 O relógio: por que o `time.Now` não serve no Windows
+
+Esta seção registra um defeito encontrado e corrigido **antes** de qualquer
+experimento, e cuja omissão teria invalidado toda a medição de baixa latência.
+
+No Windows, o `time.Now` do Go não usa o *QueryPerformanceCounter*: lê o tempo
+de interrupção do sistema, cuja granularidade é a do tique do temporizador.
+Medido nesta máquina:
+
+| Grandeza | Valor |
+|----------|-------|
+| menor passo não-nulo entre leituras sucessivas de `time.Now` | 331 µs |
+| passo mediano | 534 µs |
+| granularidade do relógio de parede | ~30 ms |
+| resolução do `QueryPerformanceCounter` | **100 ns** |
+
+Uma troca de mensagens em loopback leva cerca de 125 a 300 µs — abaixo do passo
+do relógio do runtime. O efeito foi observado numa rodada de 200 TPS antes da
+correção: os campos `ts_envio` e `ts_resposta` do `raw.csv` saíam **idênticos
+até o último dígito**, e a mediana da latência de serviço saía em zero.
+
+```
+stan,ts_agendado,ts_envio,ts_resposta,latencia_servico_us,...
+001000,...12.7175509-03:00,...12.7180881-03:00,...12.7180881-03:00,0,537,00,
+```
+
+O `internal/clock` corrige isso ancorando **uma única** leitura de parede a um
+contador monotônico de alta resolução. Todos os instantes seguintes são a
+âncora mais o deslocamento monotônico, de modo que a diferença entre dois
+instantes tem a precisão do contador, e não a do tique do sistema. A exatidão
+absoluta em relação ao horário civil continua sendo a da âncora, o que é
+irrelevante para medir durações.
+
+Depois da correção, a mesma rodada de 200 TPS:
+
+```
+stan,ts_agendado,ts_envio,ts_resposta,latencia_servico_us,...
+001000,...50.9711895-03:00,...50.9716797-03:00,...50.9718641-03:00,184,675,00,
+```
+
+Mediana da latência de serviço: **270 µs**, com mínimo de 125 µs. Os percentis
+calculados diretamente do CSV conferem com os do histograma, o que valida a
+consolidação.
+
+A fonte e a resolução do relógio entram no bloco de ambiente do
+`summary.json`. Uma latência da ordem da resolução do relógio não é mensurável,
+e o artigo precisa declarar esse piso em vez de apresentar números abaixo dele.
+
+> **A correção é da medição, não do agendamento.** A espera entre chegadas
+> continua sujeita à granularidade do temporizador do sistema operacional, da
+> ordem de centenas de microssegundos. É dela que vem o teto de injeção
+> discutido na seção 6, e é por isso que o atraso de agendamento é medido e
+> reportado separadamente.
+
+### 5.9 Arquivos de saída
+
+Uma pasta por rodada, em `results/<timestamp>-<tps>-<rep>/`.
+
+**`raw.csv`** — uma linha por requisição medida, nas colunas definidas na seção
+5.4 do CLAUDE.md:
+
+```
+stan, ts_agendado, ts_envio, ts_resposta,
+latencia_servico_us, latencia_resposta_us, de39, erro_transporte
+```
+
+As duas latências ocupam colunas separadas para que a análise possa compará-las
+e o artigo discutir a diferença. Linhas com falha de transporte têm as duas em
+branco: zero seria indistinguível de uma resposta instantânea. As chegadas do
+warm-up não são escritas — mantê-las no arquivo bruto convidaria a incluí-las
+na análise por engano.
+
+A conversão para microssegundos arredonda, e não trunca: truncar levaria toda
+latência submicrossegundo a zero, e um zero no arquivo bruto seria lido como
+medição instantânea.
+
+**`summary.json`** — o resumo consolidado mais o bloco de ambiente completo:
+versão do Go, `GOMAXPROCS`, número de CPUs, sistema operacional, arquitetura,
+`GOGC`, fonte e resolução do relógio, todas as flags do injetor, a
+configuração do autorizador e a linha de comando exata.
+
+O bloco do autorizador é hoje preenchido pela flag `-sut`, que registra a linha
+de comando informada por quem executa. Quando o autorizador ganhar suas
+próprias flags, no passo 5, o mecanismo passa a ser automático.
+
+### 5.10 Warm-up
+
+O warm-up é delimitado por **índice de chegada**, não por relógio: a chegada de
+índice *i* ocorre no instante *i*/TPS, então as chegadas do warm-up são
+exatamente as de índice menor que *warmup*×TPS. Delimitar por índice torna o
+recorte idêntico entre rodadas, sem depender do instante em que o processo
+começou.
+
+Uma rodada com warm-up maior ou igual à duração é recusada: não sobraria nada
+para medir.
 
 ---
 
@@ -315,6 +426,32 @@ carga passa a chegar em rajadas.
 > experimento deve ser executado em taxa acima do teto de calibração sem que
 > isso seja explicitamente discutido: naquele nível de carga o resultado mede o
 > injetor, não o autorizador.
+
+### 6.1 Piso de ruído da máquina
+
+Medição exploratória com o autorizador respondendo sem latência artificial,
+8 conexões, rodadas de 10 s com 2 s de warm-up:
+
+| Alvo | Mediana serviço | p95 serviço | p99 serviço | máximo serviço |
+|------|-----------------|-------------|-------------|----------------|
+| 20 TPS | 979 µs | 4,2 ms | **25,7 ms** | 36,6 ms |
+| 200 TPS | 794 µs | 6,2 ms | **11,6 ms** | 22,2 ms |
+
+A cauda **não cresce com a carga** — a 20 TPS o p99 é pior que a 200 TPS. Isso
+descarta enfileiramento como explicação: o que se vê é ruído ambiente da
+máquina (escalonamento do Windows, gerenciamento de energia, processos de
+fundo, pausas do coletor de lixo dos dois processos).
+
+A consequência para o experimento é direta: **o p99 de uma rodada só diz algo
+sobre o autorizador se a latência de serviço configurada estiver bem acima
+desse piso.** Abaixo dele, a cauda medida é a da máquina, não a do sistema sob
+teste.
+
+Quantificar esse piso com rigor, e não por amostragem exploratória, é o
+propósito do passo 6. O valor apurado vai para o artigo como limite declarado
+do aparato, ao lado do teto de injeção.
+
+---
 
 ## 7. Ambiente de execução
 
