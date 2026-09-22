@@ -30,6 +30,8 @@ warm-up, semente ou arquivos de saída.
 ## Requisitos
 
 - Go 1.25.3 ou superior (a versão está travada em `go.mod`).
+- Um compilador C, para o detector de corrida. No Windows:
+  `winget install BrechtSanders.WinLibs.POSIX.UCRT`.
 
 A única dependência direta é `github.com/moov-io/iso8583`.
 
@@ -38,6 +40,25 @@ A única dependência direta é `github.com/moov-io/iso8583`.
 ```sh
 go build ./...
 go test ./...
+```
+
+O injetor e o autorizador são concorrentes, então o detector de corrida faz
+parte da verificação e não é opcional:
+
+```sh
+CGO_ENABLED=1 go test -race -count=3 ./...
+```
+
+Os testes usam um autorizador de mentira, montado sobre o mesmo código de
+resposta do binário real. Para exercitar o caminho concorrente do autorizador
+de verdade, compile os dois com instrumentação e rode uma carga:
+
+```sh
+CGO_ENABLED=1 go build -race -o authorizer-race ./cmd/authorizer
+CGO_ENABLED=1 go build -race -o injector-race  ./cmd/injector
+
+./authorizer-race &
+GORACE="halt_on_error=1" ./injector-race -tps 1000 -duration 8s -conns 64
 ```
 
 ## Executando o autorizador

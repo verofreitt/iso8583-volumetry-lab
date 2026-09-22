@@ -324,3 +324,20 @@ completo — versão do Go, `GOMAXPROCS`, número de CPUs, sistema operacional,
 será gravado em cada `summary.json`.
 
 Versão do Go usada no desenvolvimento até aqui: **go1.25.3 windows/amd64**.
+Compilador C para o detector de corrida: **gcc 16.1.0** (MinGW-W64
+x86_64-ucrt-posix-seh, WinLibs).
+
+### 7.1 Verificação de concorrência
+
+Injetor e autorizador são concorrentes, e o detector de corrida integra a
+verificação. Estado na conclusão do passo 3:
+
+| Verificação | Resultado |
+|-------------|-----------|
+| `go test -race -count=3 ./...` | sem corridas nos quatro pacotes |
+| binários instrumentados, 1000 TPS por 8 s, 64 conexões | 8000/8000 respondidas, sem corridas |
+
+A segunda linha importa porque os testes automatizados usam um autorizador de
+mentira: o caminho de atendimento concorrente do binário real (`go handleConn`)
+só é exercitado executando os dois processos sob carga, com `GORACE` em
+`halt_on_error=1`.
