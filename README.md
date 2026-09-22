@@ -13,9 +13,8 @@ latência e vazão que sustentem a análise do artigo.
 
 ## Estado
 
-Implementado até o **passo 5** da ordem de execução: o autorizador mock é
-configurável e determinístico, e o injetor mede a latência de cada requisição
-com correção de omissão coordenada.
+Implementado até o **passo 6** da ordem de execução: o aparato está calibrado
+e seus limites estão declarados. Pronto para os experimentos.
 
 | Passo | Componente | Estado |
 |-------|-----------|--------|
@@ -24,7 +23,7 @@ com correção de omissão coordenada.
 | 3 | Controle de taxa em modelo aberto | **concluído** |
 | 4 | Coleta de latência, `raw.csv` e `summary.json` | **concluído** |
 | 5 | Flags de configuração do mock | **concluído** |
-| 6 | Baseline de calibração | pendente |
+| 6 | Baseline de calibração | **concluído** |
 | 7 | Execução dos experimentos | pendente |
 
 ## Requisitos
@@ -209,25 +208,90 @@ sobe com qualquer pausa do coletor de lixo. Quando o médio ultrapassa o
 intervalo entre chegadas, o resumo emite um aviso explícito e a rodada passa a
 medir o injetor.
 
+## Calibração do aparato
+
+**Faça isto antes de qualquer experimento.** Injetor e autorizador disputam CPU
+na mesma máquina. Se o injetor satura em 800 TPS, o experimento de 1000 TPS
+mede o injetor e não o autorizador — e descobrir isso depois de rodar tudo é o
+pior cenário possível.
+
+```sh
+go run ./cmd/calibrate
+```
+
+| Flag | Padrão | Efeito |
+|------|--------|--------|
+| `-levels` | `100,250,500,1000,1500,2000,3000,5000` | taxas a varrer |
+| `-reps` | `3` | repetições por nível |
+| `-duration` | `15s` | duração de cada rodada, incluindo o warm-up |
+| `-warmup` | `5s` | warm-up de cada rodada |
+| `-conns` | `32` | conexões do pool do injetor |
+| `-throughput-threshold` | `99` | percentual do alvo exigido para sustentar o nível |
+| `-gomaxprocs-injector` | `0` | `GOMAXPROCS` do injetor; 0 mantém o padrão |
+| `-gomaxprocs-authorizer` | `0` | `GOMAXPROCS` do autorizador; 0 mantém o padrão |
+| `-gogc` | — | `GOGC` imposto aos dois processos |
+| `-out` | `results` | raiz onde a pasta da calibração é criada |
+
+O alvo é o autorizador em `--echo-only`, que responde imediatamente e sem
+sorteio: o que sobra de latência e de atraso é do aparato. Cada rodada usa
+processos novos, e os dois binários são compilados a partir do código corrente
+no início da varredura.
+
+A saída vai para `results/calibracao-<timestamp>/calibracao.json`, com o
+procedimento, os níveis, os limites apurados e o ambiente.
+
+### Critério de saturação
+
+Um nível é **sustentado** quando **todas** as repetições passam nos três
+critérios: atraso médio de agendamento menor que o intervalo entre chegadas,
+vazão de ao menos 99% do alvo, e zero falhas de transporte.
+
+Exigir unanimidade é deliberado — um teto de aparato deve ser conservador. E o
+teto declarado é a maior taxa sustentada **antes da primeira saturação**: um
+nível alto que volta a passar depois de um nível saturado é coincidência, não
+capacidade.
+
 ## Limites conhecidos do aparato
 
-Dois pisos desta máquina, apurados de forma exploratória e a serem
-quantificados com rigor no passo 6:
+Apurados pela calibração de 22/09/2026 e registrados em
+[`results/calibracao-20260922T190806/calibracao.json`](results/calibracao-20260922T190806/calibracao.json).
 
-**Teto de injeção, ~2000 TPS.** O atraso médio de agendamento se estabiliza em
-500–660 µs independentemente da taxa pedida — é o piso de granularidade do
-temporizador do sistema operacional. Acima desse ponto o injetor entrega o
-número correto de chegadas, mas não nos instantes pretendidos.
+| Limite | Valor |
+|--------|-------|
+| **Teto de injeção** | **500 TPS** |
+| Primeira taxa saturada | 1000 TPS |
+| Piso de atraso de agendamento | 1166 µs |
+| Piso de serviço (ida e volta em loopback) | 278 µs |
+| Ruído na cauda, p99 | 4,5 ms mín., 17,7 ms mediana, 34,9 ms máx. |
 
-**Piso de ruído no p99, milissegundos.** Com o autorizador em `--echo-only`, o
-p99 da latência de serviço fica em alguns milissegundos e não cresce com a
-carga, o que descarta enfileiramento: é ruído ambiente da máquina. O p99 de uma
-rodada só diz algo sobre o autorizador se a latência configurada estiver bem
-acima desse piso.
+**Nenhum experimento deve ser executado acima de 500 TPS.** Acima disso, o
+atraso médio de agendamento supera o intervalo entre chegadas e o resultado
+mede o injetor, não o autorizador.
 
-**Fidelidade da latência do mock, excesso de ~0,7 ms.** O `time.Sleep` do mock
-está preso à mesma granularidade de temporizador. A latência entregue excede a
-configurada em 0,5 a 0,75 ms, aproximadamente constante:
+A **vazão permanece em 100% em todos os níveis**, inclusive nos saturados: o
+injetor entrega o número correto de requisições e recebe todas as respostas até
+5000 TPS. O que ele não consegue é entregá-las *nos instantes pretendidos* —
+acima do teto, a carga deixa de ser um fluxo uniforme e passa a chegar em
+rajadas. Uma calibração que olhasse só para a vazão concluiria, erradamente,
+que o aparato sustenta 5000 TPS.
+
+### De onde vem o teto
+
+Do temporizador do sistema operacional. O `internal/clock` corrigiu a
+**medição**, não o **agendamento**: o `time.Timer` do Go desvia do prazo pedido
+de ~900 µs *antes* a dezenas de milissegundos *depois*, com mediana na casa do
+milissegundo, independentemente do prazo. Um intervalo entre chegadas menor que
+isso não é realizável.
+
+> Medições exploratórias anteriores à correção do relógio sugeriram teto
+> próximo de 2000 TPS. Aquele número era um artefato: agenda e medição usavam o
+> mesmo relógio de passo grosseiro, e o atraso do temporizador era invisível
+> para a própria medição. O teto real é quatro vezes menor.
+
+### Fidelidade da latência do mock
+
+O `time.Sleep` do mock está preso à mesma granularidade. A latência entregue
+excede a configurada em 0,5 a 0,75 ms, aproximadamente constante:
 
 | `--latency-base` | mediana medida | erro relativo |
 |------------------|----------------|---------------|
@@ -240,7 +304,8 @@ autorizadores reais operam na faixa de dezenas de milissegundos, a restrição
 não atrapalha o experimento pretendido — mas o valor a reportar no artigo é o
 **medido**, não o configurado.
 
-Ambos estão detalhados em [docs/experimento.md](docs/experimento.md).
+Os três limites estão detalhados em [docs/experimento.md](docs/experimento.md),
+seções 4.4, 6.7 e 6.8.
 
 ## Verificação manual
 
@@ -329,6 +394,7 @@ ecoados. O critério está em [docs/experimento.md](docs/experimento.md).
 ```
 cmd/authorizer/      sistema sob teste — autorizador mock
 cmd/injector/        gerador de carga
+cmd/calibrate/       calibração dos limites do aparato
 internal/iso8583/    spec, montagem, parse e enquadramento das mensagens
 internal/ratelimit/  controle de taxa em modelo aberto
 internal/clock/      relógio monotônico de alta resolução

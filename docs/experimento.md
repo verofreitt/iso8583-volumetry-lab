@@ -3,8 +3,8 @@
 Documento de registro do aparato. Cada decisão que afeta a interpretação dos
 números medidos é registrada aqui, com a justificativa.
 
-Estado atual: **passo 5 da ordem de execução** (flags de configuração do
-autorizador mock). As seções de ambiente, procedimento de execução e
+Estado atual: **passo 6 da ordem de execução** (calibração do aparato
+concluída). Os limites declarados estão na seção 6.7. As seções de ambiente, procedimento de execução e
 resultados são preenchidas conforme os passos seguintes forem concluídos.
 
 ---
@@ -527,56 +527,238 @@ para medir.
 
 ---
 
-## 6. Teto preliminar do injetor
+## 6. Calibração do aparato
 
-Medições exploratórias nesta máquina, com o autorizador respondendo sem
-latência artificial e 32 conexões, rodadas de 5 s:
+Injetor e autorizador rodam no mesmo host e disputam CPU. Isso é uma ameaça à
+validade real, e o código precisa dar meios de **medi-la, não de escondê-la**.
 
-| Alvo | Chegadas | Respondidas | Atraso médio | Atraso máximo |
-|------|----------|-------------|--------------|---------------|
-| 10 TPS | 50 | 50 | 659 µs | 3,56 ms |
-| 500 TPS | 2500 | 2500 | 562 µs | 4,67 ms |
-| 5000 TPS | 25000 | 25000 | 511 µs | 19,22 ms |
+A calibração é conduzida **antes de qualquer experimento**. Se o injetor satura
+em 800 TPS, o experimento de 1000 TPS mede o injetor e não o autorizador, e
+descobrir isso depois de rodar tudo é o pior cenário possível.
 
-O atraso médio se estabiliza em torno de **500 a 660 µs, independentemente da
-taxa pedida**. Isso não é contenção do injetor: é o piso de granularidade do
-temporizador do sistema operacional. O comportamento implica um teto de injeção
-próximo de **2000 TPS**, taxa em que o intervalo entre chegadas (500 µs) cruza
-esse piso.
+```sh
+go run ./cmd/calibrate -levels 100,250,500,1000,1500,2000,3000,5000 \
+  -reps 5 -duration 15s -warmup 5s -conns 32
+```
 
-Acima desse ponto o injetor continua entregando o número correto de chegadas,
-mas não nos instantes pretendidos: o espaçamento deixa de ser uniforme e a
-carga passa a chegar em rajadas.
+O comando grava `results/calibracao-<timestamp>/calibracao.json` com o
+procedimento, os níveis medidos, os limites apurados e o ambiente.
 
-> Estes números são **preliminares**. A calibração formal é o passo 6, e o
-> valor apurado lá vai para o artigo como limite declarado do aparato. Nenhum
-> experimento deve ser executado em taxa acima do teto de calibração sem que
-> isso seja explicitamente discutido: naquele nível de carga o resultado mede o
-> injetor, não o autorizador.
+### 6.1 Procedimento
 
-### 6.1 Piso de ruído da máquina
+O alvo é o autorizador em `--echo-only`: responde imediatamente, sem latência
+artificial e sem sorteio. O que sobra de latência e de atraso é do **aparato** —
+injetor, pilha de rede local, escalonador do sistema operacional e coletor de
+lixo dos dois processos.
 
-Medição exploratória com o autorizador respondendo sem latência artificial,
-8 conexões, rodadas de 10 s com 2 s de warm-up:
+Cada rodada usa **processos novos**, iniciados e encerrados pelo próprio
+programa de calibração, para que nada seja herdado da rodada anterior. Os dois
+binários são compilados a partir do código corrente no início da varredura:
+usar binários deixados por uma compilação anterior abriria a chance de calibrar
+uma versão diferente da que será usada nos experimentos.
 
-| Alvo | Mediana serviço | p95 serviço | p99 serviço | máximo serviço |
-|------|-----------------|-------------|-------------|----------------|
-| 20 TPS | 979 µs | 4,2 ms | **25,7 ms** | 36,6 ms |
-| 200 TPS | 794 µs | 6,2 ms | **11,6 ms** | 22,2 ms |
+### 6.2 Critério de saturação
 
-A cauda **não cresce com a carga** — a 20 TPS o p99 é pior que a 200 TPS. Isso
-descarta enfileiramento como explicação: o que se vê é ruído ambiente da
-máquina (escalonamento do Windows, gerenciamento de energia, processos de
-fundo, pausas do coletor de lixo dos dois processos).
+Um nível é considerado **sustentado** quando os consolidados passam nos
+critérios:
 
-A consequência para o experimento é direta: **o p99 de uma rodada só diz algo
-sobre o autorizador se a latência de serviço configurada estiver bem acima
-desse piso.** Abaixo dele, a cauda medida é a da máquina, não a do sistema sob
-teste.
+| Critério | Limiar |
+|----------|--------|
+| atraso médio de agendamento (mediana entre repetições) | menor que o intervalo entre chegadas |
+| vazão alcançada (mediana entre repetições) | ao menos 99% do alvo |
+| repetições reprovadas individualmente | não mais que a metade |
 
-Quantificar esse piso com rigor, e não por amostragem exploratória, é o
-propósito do passo 6. O valor apurado vai para o artigo como limite declarado
-do aparato, ao lado do teto de injeção.
+O **teto de injeção declarado** é a maior taxa sustentada *antes da primeira
+saturação*. Um nível alto que volta a passar depois de um nível saturado é
+coincidência, não capacidade, e não eleva o teto.
+
+#### Por que mediana e não unanimidade
+
+A primeira versão deste critério exigia que **todas** as repetições passassem.
+O argumento parecia sólido — um teto de aparato deve ser conservador — e estava
+errado. A primeira calibração desta máquina produziu:
+
+```
+     100 TPS  atraso 766us  vazao 100%  sustentado
+     250 TPS  atraso 642us  vazao 100%  SATURADO
+     500 TPS  atraso 766us  vazao 100%  sustentado
+    2000 TPS  atraso 359us  vazao 100%  sustentado
+```
+
+Teto declarado: **100 TPS**, quando o injetor sustentava 2000 TPS com folga. A
+causa foi uma única repetição a 250 TPS com atraso médio de 18410 µs contra
+642 µs das outras duas — um engasgo transitório da máquina, não incapacidade de
+sustentar a taxa. Combinada com a regra de parar na primeira saturação, a
+unanimidade deixou o teto refém de um evento externo.
+
+A mediana entre repetições distingue **incapacidade sistemática**, que é o que
+o teto deve medir, de **ruído transitório**. As repetições reprovadas
+individualmente continuam registradas no `calibracao.json` e aparecem no
+relatório, para que uma decisão apertada não passe despercebida.
+
+O caso está coberto por `TestUmaRepeticaoRuimNaoDerrubaONivel` e seu
+contraponto `TestMaioriaRuimDerrubaONivel`.
+
+### 6.3 Os pisos vêm do conjunto dos níveis
+
+A primeira versão tirava os pisos do nível mais baixo, supondo que a menor taxa
+seria a menos ruidosa. Não é o caso nesta classe de máquina: na primeira
+calibração o p99 a 100 TPS foi 9063 µs, contra 771 µs a 1500 TPS.
+
+O relatório passa a apurar:
+
+- **piso de atraso**: o mínimo entre os níveis
+- **piso de serviço**: a mediana, entre os níveis, da mediana de ida e volta —
+  é a grandeza mais estável da calibração
+- **ruído na cauda**: o p99 em **três** valores, mínimo, mediana e máximo
+
+O p99 é reportado como faixa porque a dispersão é o próprio achado: ele não
+cresce com a carga e varia por uma ordem de grandeza entre níveis, conforme o
+ruído ambiente durante a rodada. Um número único daria a impressão de um piso
+bem determinado que não existe.
+
+### 6.4 Isolamento de recursos
+
+O programa de calibração permite fixar `GOMAXPROCS` e `GOGC` de cada processo
+separadamente, como exige a seção 7 do CLAUDE.md:
+
+```sh
+go run ./cmd/calibrate -gomaxprocs-injector 2 -gomaxprocs-authorizer 2 -gogc 400
+```
+
+Os valores são impostos como variáveis de ambiente aos processos filhos e ficam
+registrados no `calibracao.json`. Para execuções manuais, as mesmas variáveis
+valem diretamente:
+
+```sh
+GOMAXPROCS=2 go run ./cmd/authorizer --echo-only
+GOMAXPROCS=2 go run ./cmd/injector -tps 500 -duration 30s
+```
+
+Em Linux, `taskset` prende cada binário a conjuntos disjuntos de núcleos, o que
+é mais forte que limitar `GOMAXPROCS` porque impede também a migração entre
+núcleos:
+
+```sh
+taskset -c 0,1 ./authorizer --echo-only &
+taskset -c 2,3 ./injector -tps 500 -duration 30s
+```
+
+O equivalente no Windows é a afinidade de processador, ajustável por
+`Start-Process -Affinity` ou pelo Gerenciador de Tarefas. As medições deste
+documento foram feitas **sem** fixar afinidade, e essa é uma limitação
+declarada: parte da dispersão observada vem da migração de núcleos decidida
+pelo escalonador do sistema.
+
+### 6.5 Higiene do ambiente de medição
+
+A dispersão observada é grande o bastante para que processos de fundo importem.
+Antes de uma rodada que vá para o artigo:
+
+- encerre sincronizadores de arquivo. Este repositório fica dentro de uma pasta
+  do OneDrive; o serviço **não estava em execução** durante as medições
+  registradas aqui, mas com ele ativo a varredura deve ser feita a partir de
+  uma pasta fora da sincronização;
+- evite compilar, indexar ou navegar durante a varredura;
+- mantenha o plano de energia em desempenho máximo, já que o escalonamento de
+  frequência afeta diretamente a cauda.
+
+Nenhuma dessas medidas elimina o ruído. Elas reduzem a chance de uma repetição
+isolada contaminar o resultado — e o critério pela mediana existe justamente
+porque a redução nunca é completa.
+
+### 6.6 GOGC
+
+As pausas do coletor de lixo do Go afetam os dois processos e contaminam a
+cauda da distribuição de latência — é o fenômeno que Dean e Barroso (2013)
+descrevem. O valor efetivo de `GOGC` é registrado no `summary.json` de cada
+rodada e no `calibracao.json`, mesmo quando não foi escolhido explicitamente,
+porque o padrão do runtime é 100 e isso precisa constar do resultado.
+
+Fixar `GOGC` em um valor alto reduz a frequência das pausas ao custo de mais
+memória. A decisão pertence ao desenho de cada experimento, e o que o aparato
+garante é que a escolha fique registrada.
+
+### 6.7 Resultado da calibração
+
+Varredura de 22/09/2026, 8 níveis, 5 repetições de 15 s com 5 s de warm-up,
+32 conexões, alvo em `--echo-only`. Relatório completo em
+[`results/calibracao-20260922T190806/calibracao.json`](../results/calibracao-20260922T190806/calibracao.json).
+
+| Alvo | Intervalo | Atraso médio | Vazão | p50 serviço | p99 serviço | p99 resposta | Situação |
+|------|-----------|--------------|-------|-------------|-------------|--------------|----------|
+| 100 TPS | 10000 µs | 2180 µs | 100,0% | 357 µs | 34,9 ms | 43,9 ms | sustentado |
+| 250 TPS | 4000 µs | 1313 µs | 100,0% | 278 µs | 6,3 ms | 10,1 ms | sustentado |
+| 500 TPS | 2000 µs | 1166 µs | 100,0% | 258 µs | 4,5 ms | 10,0 ms | sustentado |
+| 1000 TPS | 1000 µs | 1408 µs | 100,0% | 240 µs | 23,7 ms | 94,6 ms | **saturado** |
+| 1500 TPS | 666 µs | 1247 µs | 100,0% | 244 µs | 7,4 ms | 23,4 ms | **saturado** |
+| 2000 TPS | 500 µs | 1282 µs | 100,0% | 259 µs | 10,1 ms | 105,3 ms | **saturado** |
+| 3000 TPS | 333 µs | 2308 µs | 100,0% | 330 µs | 30,1 ms | 201,9 ms | **saturado** |
+| 5000 TPS | 200 µs | 3988 µs | 100,0% | 1144 µs | 17,7 ms | 470,5 ms | **saturado** |
+
+Nos níveis saturados, **5 de 5 repetições** reprovaram individualmente: é falha
+sistemática, não ruído.
+
+#### Limites declarados do aparato
+
+| Limite | Valor |
+|--------|-------|
+| **Teto de injeção** | **500 TPS** |
+| Primeira taxa saturada | 1000 TPS |
+| Piso de atraso de agendamento | 1166 µs |
+| Piso de serviço (mediana, ida e volta em loopback) | 278 µs |
+| Ruído na cauda, p99 | 4,5 ms mínimo, 17,7 ms mediana, 34,9 ms máximo |
+
+**Nenhum experimento deve ser executado acima de 500 TPS.** Acima disso, o
+atraso médio de agendamento supera o intervalo entre chegadas e o resultado
+mede o injetor, não o autorizador.
+
+Note que a **vazão permanece em 100% em todos os níveis**, inclusive nos
+saturados. O injetor entrega o número correto de requisições e recebe todas as
+respostas até 5000 TPS — o que ele não consegue é entregá-las *nos instantes
+pretendidos*. Acima do teto, a carga deixa de ser um fluxo uniforme e passa a
+chegar em rajadas. Uma calibração que olhasse apenas para a vazão concluiria,
+erradamente, que o aparato sustenta 5000 TPS.
+
+### 6.8 De onde vem o teto: o temporizador, não o relógio
+
+O teto é imposto pelo temporizador do sistema operacional, e a distinção em
+relação ao relógio de medição (seção 5.8) é essencial: **o `internal/clock`
+corrigiu a medição, não o agendamento.**
+
+Desvio do `time.Timer` do Go em relação ao prazo pedido, medido contra o
+`QueryPerformanceCounter` (`TestGranularidadeDoTemporizador`):
+
+| Prazo pedido | Desvio mínimo | Desvio p50 | Desvio p90 | Desvio máximo |
+|--------------|---------------|------------|------------|---------------|
+| 100 µs | −98 µs | 1,35 ms | 14,7 ms | 62,3 ms |
+| 500 µs | −465 µs | 593 µs | 14,0 ms | 94,3 ms |
+| 1 ms | −886 µs | 523 µs | 4,7 ms | 54,3 ms |
+| 2 ms | −342 µs | 263 µs | 4,1 ms | 14,0 ms |
+| 10 ms | −807 µs | 3,05 ms | 15,8 ms | 61,9 ms |
+
+O desvio ocorre nos **dois sentidos**: o temporizador dispara até ~900 µs
+**antes** do prazo. É o que se espera de um temporizador governado por um
+relógio de passo grosseiro — quando ele julga que 1 ms passou, o tempo real
+decorrido está em qualquer ponto de uma janela da largura do tique.
+
+A mediana do desvio fica na casa do milissegundo, independentemente do prazo
+pedido. Um intervalo entre chegadas menor que isso não é realizável, o que
+situa o teto entre 500 e 1000 TPS — exatamente onde a varredura o encontrou.
+
+> **Atenção ao comparar com medições anteriores a esta correção.** Antes do
+> `internal/clock`, agenda e medição usavam o mesmo `time.Now` de passo
+> grosseiro, e o atraso do temporizador era **invisível para a própria
+> medição**: o injetor reportava atraso médio de 500 a 660 µs em qualquer taxa,
+> e uma varredura exploratória sugeriu teto próximo de 2000 TPS. Aquele número
+> não estava errado por acaso — a medição era cega ao próprio erro. O teto real,
+> medido com relógio adequado, é quatro vezes menor.
+
+O atraso de agendamento registrado pelo injetor conta apenas o desvio
+**positivo**: uma chegada disparada antes do instante pretendido não entra na
+média. A escolha é adequada ao critério de saturação, que pergunta se o injetor
+ficou para trás, mas subestima a dispersão total do processo de chegadas. A
+caracterização completa do jitter está na tabela acima.
 
 ---
 
