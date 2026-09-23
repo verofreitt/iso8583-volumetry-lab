@@ -194,14 +194,52 @@ Sem o bloco de ambiente no `summary.json` a rodada é inútil para o artigo.
 
 ## 6. Métricas obrigatórias
 
-- **Throughput alvo vs. alcançado.** Esta é a métrica mais importante e a mais
-  esquecida. Se o alcançado ficar abaixo do alvo, o resultado daquele nível de
-  carga mede a saturação de algum componente — e é preciso saber qual.
+- **Aderência ao agendamento.** A distribuição de (instante real de envio −
+  instante pretendido), com os dois sinais preservados. Esta é a métrica que
+  valida o *aparato*: enquanto ela se mantiver muito menor que o intervalo
+  entre chegadas, o injetor está de fato aplicando a taxa pretendida.
+- **Throughput alvo vs. alcançado.** Métrica de saturação do *sistema sob
+  teste*. Se o alcançado ficar abaixo do alvo, aquele nível de carga mede a
+  saturação de algum componente — e é preciso saber qual.
 - Latência: média, mediana, p95, p99, p99.9, máximo, desvio-padrão.
 - Taxa de aprovação e recusa; distribuição dos valores de DE 39.
 - **Erros de transporte e timeouts contados separadamente das recusas.** Uma
   recusa é resposta de negócio; um timeout é falha de desempenho. Misturar os
   dois invalida a análise.
+
+### 6.1 Por que a vazão não valida o aparato
+
+Uma versão anterior deste documento apontava a vazão alcançada como "a métrica
+mais importante". A calibração de 22/09/2026 mostrou que ela é **insuficiente
+para esse fim**, e o erro é do tipo que se propaga silenciosamente para o
+resultado.
+
+Na varredura contra o alvo trivial, a vazão ficou em **100% em todos os
+níveis, de 100 a 5000 TPS** — inclusive naqueles em que o processo de chegada
+já havia colapsado. O injetor entrega o número correto de requisições e recebe
+todas as respostas mesmo a 5000 TPS; o que ele não consegue é entregá-las *nos
+instantes pretendidos*. Acima do teto, a carga deixa de ser um fluxo uniforme e
+passa a chegar em rajadas, e a vazão não registra isso.
+
+Uma calibração guiada pela vazão concluiria que o aparato sustenta 5000 TPS. O
+que denuncia o colapso é a aderência ao agendamento, que a 5000 TPS mostrou
+atraso médio de 3988 µs contra um intervalo entre chegadas de 200 µs.
+
+As duas métricas respondem perguntas diferentes e nenhuma substitui a outra:
+
+| Métrica | Pergunta que responde |
+|---------|----------------------|
+| aderência ao agendamento | o injetor aplicou a carga que prometeu? |
+| vazão alcançada | o sistema sob teste deu conta da carga aplicada? |
+
+A segunda só tem sentido se a primeira passar. Esta é a armadilha que Jiang &
+Hassan tratam na fase de execução do teste de carga, e o episódio entra na
+metodologia do artigo.
+
+**Os dois sinais do desvio importam.** Registrar apenas o atraso positivo
+subestima a dispersão do processo de chegadas: no Windows, o temporizador do
+runtime dispara tanto depois quanto *antes* do prazo pedido. A caracterização
+precisa ser da distribuição completa.
 
 ---
 
@@ -223,6 +261,16 @@ medi-la, não de escondê-la.
    não o autorizador. Descobrir isso depois de rodar tudo é o pior cenário
    possível. O teto de calibração vai para o artigo como limite declarado do
    aparato.
+
+   **A saturação do injetor é detectada pela aderência ao agendamento, não
+   pela vazão** — ver seção 6.1. A vazão permanece em 100% muito depois de o
+   processo de chegada ter colapsado em rajadas.
+
+   O critério de saturação e o número de repetições são decisões de método e
+   precisam ser declarados no artigo. Se forem revistos depois de ver os dados
+   de uma execução piloto, a revisão é **post-hoc** e precisa ser declarada
+   como tal: critério inicial, o que o piloto revelou, critério revisado, por
+   quê. Kalibera & Jones é a âncora para justificar o número de repetições.
 3. Registre `GOGC` e considere fixá-lo. Pausas do coletor de lixo do Go afetam
    os dois processos e contaminam a cauda — Dean & Barroso (2013) tratam
    exatamente disso e são citados no artigo.

@@ -29,6 +29,14 @@ type Registro struct {
 	// STAN e a chave de correlacao entre requisicao e resposta.
 	STAN string
 
+	// MassaID e o id da linha da massa que originou a requisicao.
+	//
+	// Sem ela o raw.csv nao se liga a transacao que o gerou, e nao ha como
+	// cruzar atributos como MCC, valor ou forma de captura com o codigo de
+	// resposta e a latencia. A hipotese do trabalho fala em identificar
+	// padroes de erro, e padrao exige esse cruzamento.
+	MassaID string
+
 	// Agendado e o instante de chegada pretendido.
 	Agendado time.Time
 
@@ -154,6 +162,7 @@ func (c *Coletor) Medidos() []Registro {
 // CLAUDE.md.
 var colunas = []string{
 	"stan",
+	"massa_id",
 	"ts_agendado",
 	"ts_envio",
 	"ts_resposta",
@@ -167,6 +176,11 @@ var colunas = []string{
 //
 // As chegadas do warm-up nao sao escritas: o warm-up e descartado, e mante-lo
 // no arquivo bruto convidaria a inclui-lo na analise por engano.
+//
+// A coluna massa_id liga cada linha a transacao de entrada que a originou, em
+// data/massa.csv. E ela que permite cruzar atributos da transacao com codigo
+// de resposta e latencia. A secao 5.4 do CLAUDE.md nao a previa; o acrescimo
+// esta justificado em docs/experimento.md.
 //
 // Os instantes usam RFC 3339 com nanossegundos. As duas latencias ocupam
 // colunas separadas, para que a analise possa comparar a latencia de servico
@@ -183,6 +197,7 @@ func (c *Coletor) EscreverCSV(w io.Writer) error {
 	for _, r := range c.Medidos() {
 		linha := []string{
 			r.STAN,
+			r.MassaID,
 			r.Agendado.Format(time.RFC3339Nano),
 			r.Envio.Format(time.RFC3339Nano),
 			"", // ts_resposta
@@ -193,9 +208,9 @@ func (c *Coletor) EscreverCSV(w io.Writer) error {
 		}
 
 		if r.Sucesso() {
-			linha[3] = r.Resposta.Format(time.RFC3339Nano)
-			linha[4] = strconv.FormatInt(microssegundos(r.LatenciaServico()), 10)
-			linha[5] = strconv.FormatInt(microssegundos(r.LatenciaResposta()), 10)
+			linha[4] = r.Resposta.Format(time.RFC3339Nano)
+			linha[5] = strconv.FormatInt(microssegundos(r.LatenciaServico()), 10)
+			linha[6] = strconv.FormatInt(microssegundos(r.LatenciaResposta()), 10)
 		}
 
 		if err := escritor.Write(linha); err != nil {

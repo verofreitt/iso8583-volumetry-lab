@@ -14,6 +14,7 @@ import (
 	"time"
 
 	iso "github.com/verofreitt/iso8583-volumetry-lab/internal/iso8583"
+	"github.com/verofreitt/iso8583-volumetry-lab/internal/massa"
 	"github.com/verofreitt/iso8583-volumetry-lab/internal/metrics"
 	"github.com/verofreitt/iso8583-volumetry-lab/internal/ratelimit"
 )
@@ -76,6 +77,43 @@ func atenderConexao(conn net.Conn, de39 string, servico time.Duration) {
 	}
 }
 
+// massaDeTeste monta uma massa pequena em memoria, com as mesmas garantias da
+// massa real: larguras corretas e PAN valido por Luhn na faixa de teste.
+func massaDeTeste(t *testing.T) *massa.Massa {
+	t.Helper()
+
+	var linhas []massa.Transacao
+	for i := 0; i < 16; i++ {
+		parcial := fmt.Sprintf("99999900000%04d", i)
+		linhas = append(linhas, massa.Transacao{
+			ID:             fmt.Sprintf("%d", i+1),
+			PAN:            parcial + fmt.Sprintf("%d", massa.DigitoLuhn(parcial)),
+			ProcessingCode: "000000",
+			Valor:          massa.FormatarValor(int64(1000 + i*37)),
+			MCC:            "5411",
+			POSEntryMode:   "051",
+			Adquirente:     "000001",
+			TerminalID:     fmt.Sprintf("TERM%04d", i+1),
+			Moeda:          "986",
+		})
+	}
+
+	var buf bytes.Buffer
+	if err := massa.Escrever(&buf, linhas); err != nil {
+		t.Fatalf("escrevendo massa de teste: %v", err)
+	}
+	m, err := massa.LerDe(&buf)
+	if err != nil {
+		t.Fatalf("lendo massa de teste: %v", err)
+	}
+	return m
+}
+
+func transacaoDeTeste(t *testing.T) massa.Transacao {
+	t.Helper()
+	return massaDeTeste(t).Em(0)
+}
+
 // --- construcao da requisicao ---
 
 func TestRequisicaoSTANDerivaDoIndice(t *testing.T) {
@@ -88,7 +126,7 @@ func TestRequisicaoSTANDerivaDoIndice(t *testing.T) {
 		1000001: "000001",
 	}
 	for indice, esperado := range casos {
-		req := requisicao(ratelimit.Chegada{Indice: indice, Agendado: time.Now()})
+		req := requisicao(ratelimit.Chegada{Indice: indice, Agendado: time.Now()}, transacaoDeTeste(t))
 		if req.STAN != esperado {
 			t.Errorf("indice %d: STAN = %q, esperado %q", indice, req.STAN, esperado)
 		}
@@ -100,7 +138,7 @@ func TestRequisicaoSTANDerivaDoIndice(t *testing.T) {
 // momento do envio.
 func TestRequisicaoUsaInstanteAgendado(t *testing.T) {
 	agendado := time.Date(2026, 9, 5, 14, 30, 0, 0, time.UTC)
-	req := requisicao(ratelimit.Chegada{Indice: 7, Agendado: agendado})
+	req := requisicao(ratelimit.Chegada{Indice: 7, Agendado: agendado}, transacaoDeTeste(t))
 
 	if !req.Instante.Equal(agendado) {
 		t.Errorf("Instante = %v, esperado %v", req.Instante, agendado)
@@ -108,7 +146,7 @@ func TestRequisicaoUsaInstanteAgendado(t *testing.T) {
 }
 
 func TestRequisicaoEhValida(t *testing.T) {
-	empacotada, err := requisicao(ratelimit.Chegada{Indice: 1, Agendado: time.Now()}).Pack()
+	empacotada, err := requisicao(ratelimit.Chegada{Indice: 1, Agendado: time.Now()}, transacaoDeTeste(t)).Pack()
 	if err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
@@ -211,7 +249,7 @@ func TestPoolDescartarSubstituiConexao(t *testing.T) {
 		if err != nil {
 			t.Fatalf("adquirir %d: %v", i, err)
 		}
-		if _, err := trocar(c, requisicao(ratelimit.Chegada{Indice: i, Agendado: time.Now()})); err != nil {
+		if _, err := trocar(c, requisicao(ratelimit.Chegada{Indice: i, Agendado: time.Now()}, transacaoDeTeste(t))); err != nil {
 			t.Errorf("troca %d apos descarte: %v", i, err)
 		}
 		p.devolver(c)
@@ -243,7 +281,7 @@ func TestTrocarPontaAPonta(t *testing.T) {
 	}
 	defer conn.Close()
 
-	req := requisicao(ratelimit.Chegada{Indice: 3, Agendado: time.Now()})
+	req := requisicao(ratelimit.Chegada{Indice: 3, Agendado: time.Now()}, transacaoDeTeste(t))
 	resp, err := trocar(conn, req)
 	if err != nil {
 		t.Fatalf("trocar: %v", err)
@@ -277,7 +315,7 @@ func TestTrocarFalhaSemResposta(t *testing.T) {
 	}
 	aceita.Close()
 
-	if _, err := trocar(conn, requisicao(ratelimit.Chegada{Indice: 0, Agendado: time.Now()})); err == nil {
+	if _, err := trocar(conn, requisicao(ratelimit.Chegada{Indice: 0, Agendado: time.Now()}, transacaoDeTeste(t))); err == nil {
 		t.Error("esperado erro quando o autorizador fecha sem responder, obtido nil")
 	}
 }
@@ -345,9 +383,10 @@ func TestRodadaModeloAberto(t *testing.T) {
 		t.Fatalf("NovoAberto: %v", err)
 	}
 
+	m := massaDeTeste(t)
 	coletor := metrics.NovoColetor(agendador.Chegadas(), 0)
 	res := agendador.Executar(context.Background(), func(ch ratelimit.Chegada) {
-		coletor.Registrar(requisitar(context.Background(), p, ch))
+		coletor.Registrar(requisitar(context.Background(), p, ch, m))
 	})
 
 	const esperado = 20 // 50 TPS por 0,4 s
@@ -385,9 +424,10 @@ func TestRodadaSTANsUnicos(t *testing.T) {
 		t.Fatalf("NovoAberto: %v", err)
 	}
 
+	m := massaDeTeste(t)
 	coletor := metrics.NovoColetor(agendador.Chegadas(), 0)
 	agendador.Executar(context.Background(), func(ch ratelimit.Chegada) {
-		coletor.Registrar(requisitar(context.Background(), p, ch))
+		coletor.Registrar(requisitar(context.Background(), p, ch, m))
 	})
 
 	vistos := map[string]bool{}
@@ -419,9 +459,10 @@ func TestRodadaContaRecusasSeparadamente(t *testing.T) {
 		t.Fatalf("NovoAberto: %v", err)
 	}
 
+	m := massaDeTeste(t)
 	coletor := metrics.NovoColetor(agendador.Chegadas(), 0)
 	res := agendador.Executar(context.Background(), func(ch ratelimit.Chegada) {
-		coletor.Registrar(requisitar(context.Background(), p, ch))
+		coletor.Registrar(requisitar(context.Background(), p, ch, m))
 	})
 
 	resumo, err := coletor.Resumir(
@@ -468,9 +509,10 @@ func TestRodadaRegistraOmissaoCoordenada(t *testing.T) {
 		t.Fatalf("NovoAberto: %v", err)
 	}
 
+	m := massaDeTeste(t)
 	coletor := metrics.NovoColetor(agendador.Chegadas(), 0)
 	agendador.Executar(context.Background(), func(ch ratelimit.Chegada) {
-		coletor.Registrar(requisitar(context.Background(), p, ch))
+		coletor.Registrar(requisitar(context.Background(), p, ch, m))
 	})
 
 	medidos := coletor.Medidos()
@@ -512,9 +554,10 @@ func TestRodadaEscreveArquivos(t *testing.T) {
 		t.Fatalf("NovoAberto: %v", err)
 	}
 
+	m := massaDeTeste(t)
 	coletor := metrics.NovoColetor(agendador.Chegadas(), 10)
 	res := agendador.Executar(context.Background(), func(ch ratelimit.Chegada) {
-		coletor.Registrar(requisitar(context.Background(), p, ch))
+		coletor.Registrar(requisitar(context.Background(), p, ch, m))
 	})
 
 	resumo, err := coletor.Resumir(
@@ -556,8 +599,16 @@ func TestRodadaEscreveArquivos(t *testing.T) {
 	if len(linhas) != 21 { // 30 chegadas - 10 de warm-up, + cabecalho
 		t.Errorf("%d linhas em raw.csv, esperado 21", len(linhas))
 	}
-	if linhas[0][0] != "stan" || linhas[0][5] != "latencia_resposta_us" {
+	if linhas[0][0] != "stan" || linhas[0][1] != "massa_id" || linhas[0][6] != "latencia_resposta_us" {
 		t.Errorf("cabecalho inesperado: %v", linhas[0])
+	}
+
+	// a coluna massa_id precisa estar preenchida: e ela que liga o raw.csv a
+	// transacao de entrada, permitindo cruzar atributos com latencia e DE 39
+	for i, linha := range linhas[1:] {
+		if linha[1] == "" {
+			t.Fatalf("linha %d sem massa_id: %v", i+2, linha)
+		}
 	}
 
 	// summary.json: precisa conter o bloco de ambiente completo

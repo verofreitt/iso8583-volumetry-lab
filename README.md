@@ -13,8 +13,8 @@ latência e vazão que sustentem a análise do artigo.
 
 ## Estado
 
-Implementado até o **passo 6** da ordem de execução: o aparato está calibrado
-e seus limites estão declarados. Pronto para os experimentos.
+Implementado até o **passo 6** da ordem de execução, mais a massa sintética de
+entrada. O aparato está calibrado e seus limites declarados.
 
 | Passo | Componente | Estado |
 |-------|-----------|--------|
@@ -24,6 +24,7 @@ e seus limites estão declarados. Pronto para os experimentos.
 | 4 | Coleta de latência, `raw.csv` e `summary.json` | **concluído** |
 | 5 | Flags de configuração do mock | **concluído** |
 | 6 | Baseline de calibração | **concluído** |
+| — | Massa sintética de entrada | **concluído** |
 | 7 | Execução dos experimentos | pendente |
 
 ## Requisitos
@@ -59,6 +60,53 @@ CGO_ENABLED=1 go build -race -o injector-race  ./cmd/injector
 ./authorizer-race &
 GORACE="halt_on_error=1" ./injector-race -tps 1000 -duration 8s -conns 64
 ```
+
+## Massa sintética
+
+A massa é um **único CSV de entrada**, uma linha por transação, versionado em
+`data/massa.csv`. As duas saídas — `raw.csv` e `summary.json` — são geradas por
+rodada.
+
+```sh
+go run ./cmd/massa -seed 1 -linhas 50000
+```
+
+O CSV commitado é a **fonte de verdade** dos experimentos; o gerador documenta
+o método. Reproduzir a massa só a partir da semente não é confiável entre
+versões do Go — a 1.20 passou a semear as funções globais automaticamente, a
+1.22 adotou o ChaCha8, e o `math/rand/v2` removeu o gerador da Go 1. Quem
+replicar pega o CSV e obtém os mesmos bytes.
+
+| Coluna | DE | Origem |
+|--------|----|--------|
+| `id` | — | sequencial; liga ao `raw.csv` |
+| `pan` | 2 | 16 dígitos, válido por Luhn, prefixo 9 (MII reservado) |
+| `processing_code` | 3 | compra ou saque |
+| `amount` | 4 | lognormal truncada, mediana R$ 50,00 |
+| `mcc` | 18 | 6 valores da ISO 18245 |
+| `pos_entry_mode` | 22 | digitado, tarja, chip, aproximação, e-commerce |
+| `acquirer_id` | 32 | 5 instituições sintéticas |
+| `terminal_id` | 41 | 500 terminais |
+| `currency` | 49 | `986` |
+
+STAN, RRN e os campos de data e hora **não** são massa: são gerados por
+requisição no instante do envio.
+
+São duas sementes distintas: `cmd/massa -seed` gera a massa, `cmd/injector
+-seed` define a ordem de consumo.
+
+### Cruzando transação com resultado
+
+O `raw.csv` traz a coluna `massa_id`, que liga cada requisição à transação que
+a originou:
+
+```
+raw.csv.massa_id -> massa.csv.id -> pan, mcc, amount, pos_entry_mode, ...
+raw.csv.stan     -> correlação requisição/resposta
+```
+
+É essa cadeia que permite cruzar atributos da transação com código de recusa e
+latência — o cruzamento central da hipótese do trabalho.
 
 ## Executando o autorizador
 
@@ -128,13 +176,9 @@ go run ./cmd/injector -tps 200 -duration 20s -warmup 5s -conns 16
 | `-conns` | `8` | conexões persistentes mantidas com o autorizador |
 | `-rep` | `1` | número da repetição, usado no nome da pasta de saída |
 | `-seed` | `1` | semente da ordem de consumo da massa |
+| `-massa` | `data/massa.csv` | CSV da massa sintética de entrada |
 | `-results` | `results` | raiz onde a pasta da rodada é criada |
 | `-sut-config` | — | arquivo gravado pelo autorizador com `--config-out` |
-
-> A flag `-seed` é registrada no `summary.json` mas ainda **não tem efeito**:
-> a massa sintética (`internal/massa`) não existe, e todas as requisições usam
-> os mesmos valores. O campo já está no esquema para que ele não mude quando a
-> massa chegar.
 
 Saída de uma rodada a 200 TPS:
 
@@ -395,12 +439,14 @@ ecoados. O critério está em [docs/experimento.md](docs/experimento.md).
 cmd/authorizer/      sistema sob teste — autorizador mock
 cmd/injector/        gerador de carga
 cmd/calibrate/       calibração dos limites do aparato
+cmd/massa/           gerador da massa sintética
 internal/iso8583/    spec, montagem, parse e enquadramento das mensagens
 internal/ratelimit/  controle de taxa em modelo aberto
 internal/clock/      relógio monotônico de alta resolução
+internal/massa/      leitura e validação da massa
 internal/metrics/    coleta de latência e consolidação
 internal/massa/      leitura dos CSVs de entrada (pendente)
-data/                massa sintética
+data/massa.csv       massa sintética de entrada (versionada)
 results/             saída bruta, uma pasta por rodada
 analysis/            scripts de estatística e gráficos
 docs/experimento.md  ambiente, decisões de projeto e procedimento

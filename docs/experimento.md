@@ -3,8 +3,9 @@
 Documento de registro do aparato. Cada decisão que afeta a interpretação dos
 números medidos é registrada aqui, com a justificativa.
 
-Estado atual: **passo 6 da ordem de execução** (calibração do aparato
-concluída). Os limites declarados estão na seção 6.7. As seções de ambiente, procedimento de execução e
+Estado atual: **massa sintética implementada**, após a calibração do passo 6.
+Os limites declarados do aparato estão na seção 6.7; as decisões revistas
+durante a execução, na seção 8. As seções de ambiente, procedimento de execução e
 resultados são preenchidas conforme os passos seguintes forem concluídos.
 
 ---
@@ -128,15 +129,172 @@ transporte precisam ser contabilizados separadamente das recusas de negócio.
 
 ## 3. Massa de dados
 
-Toda a massa é sintética e gerada com semente fixa. Nenhum dado real é
-utilizado.
+Toda a massa é sintética. Nenhum dado real é utilizado.
+
+### 3.1 Um arquivo de entrada, não três
+
+Os resultados preliminares descreviam **três** CSVs: um para a massa de
+mensagens de entrada, outro para registro de tempo de resposta e um terceiro
+para classificação das transações como aprovadas ou negadas com seus códigos de
+resposta.
+
+Dos três, apenas o primeiro é de entrada. Os outros dois eram de saída, e foram
+substituídos por `raw.csv` e `summary.json`. A substituição não é cosmética:
+
+**No `raw.csv`, a latência e o DE 39 da mesma transação ficam na mesma linha,
+correlacionáveis pelo STAN.** Mantê-los em arquivos separados perderia
+exatamente a correlação necessária para cruzar código de recusa com latência —
+que é o cruzamento central da hipótese do trabalho.
+
+A metodologia do artigo será atualizada para refletir isso. Ver a seção 8,
+sobre decisões revisadas durante a execução.
+
+### 3.2 Por que a entrada não é normalizada
+
+A massa é um único CSV, uma linha por transação, com todas as colunas. Não há
+tabelas separadas de cartões, terminais e transações. Duas razões:
+
+1. **Desempenho.** Normalizar exigiria junção em tempo de execução, pondo
+   trabalho extra no caminho crítico do injetor — justamente onde o aparato já
+   está no limite por temporização (seção 6.8).
+2. **Variedade.** A variedade combinatória se obtém gerando N linhas distintas.
+   Não são precisas três tabelas para isso.
+
+Um CSV por perfil de carga — varejo, saque, comércio eletrônico — teria valor
+experimental real, porque o mix de transações é uma segunda dimensão legítima.
+Fica registrado como trabalho futuro: multiplicaria o número de rodadas, e o
+prazo não comporta.
+
+### 3.3 Esquema
+
+```
+id,pan,processing_code,amount,mcc,pos_entry_mode,acquirer_id,terminal_id,currency
+```
+
+| Coluna | DE | Origem |
+|--------|----|--------|
+| `id` | — | sequencial; chave de ligação com o `raw.csv` |
+| `pan` | 2 | 16 dígitos, válido por Luhn, prefixo 9 |
+| `processing_code` | 3 | `000000` (compra) ou `010000` (saque) |
+| `amount` | 4 | lognormal truncada, em centavos |
+| `mcc` | 18 | 6 valores da ISO 18245 |
+| `pos_entry_mode` | 22 | 5 valores: digitado, tarja, chip, aproximação, e-commerce |
+| `acquirer_id` | 32 | 5 instituições sintéticas |
+| `terminal_id` | 41 | `TERMnnnn`, 500 terminais |
+| `currency` | 49 | `986` (real, ISO 4217) |
+
+**STAN, RRN e os campos de data e hora não fazem parte da massa.** São gerados
+por requisição no instante do envio: o STAN precisa ser único dentro da rodada
+para correlacionar requisição e resposta, e os campos temporais precisam
+refletir o instante de chegada pretendido, não o do relógio no envio.
+
+### 3.4 PAN
 
 Os PANs são válidos por Luhn e começam pelo dígito **9**. O ISO/IEC 7812 reserva
 o *Major Industry Identifier* 9 para atribuição nacional — faixa não alocada a
 nenhum esquema internacional de cartões. Isso garante que nenhum BIN real em uso
-seja emitido pelo gerador.
+seja emitido.
 
-PAN canônico usado nos testes e na verificação manual: `9999990000000014`.
+A validade por Luhn é conferida na **carga** de cada rodada, não apenas na
+geração, e uma massa que a viole aborta a rodada antes de qualquer medição.
+
+### 3.5 Distribuição do valor
+
+Lognormal, a escolha usual para valor de transação: positiva por construção e
+assimétrica à direita, com muitas compras pequenas e poucas grandes.
+
+| Parâmetro | Valor |
+|-----------|-------|
+| mediana | R$ 50,00 (μ = ln 5000, em centavos) |
+| σ | 1,2 |
+| truncamento | R$ 1,00 a R$ 10.000,00 |
+
+O truncamento representa os limites práticos de uma autorização de varejo e
+**corta a cauda da lognormal** — precisa constar do artigo. Valores fora da
+faixa são re-sorteados, e não saturados nos extremos: saturar criaria picos
+artificiais no mínimo e no máximo, visíveis na análise como artefato.
+
+Massa gerada com semente 1, 50.000 linhas:
+
+| Estatística | Valor |
+|-------------|-------|
+| PANs distintos | 50.000 |
+| mínimo | R$ 1,00 |
+| mediana | R$ 49,83 |
+| p95 | R$ 356,94 |
+| máximo | R$ 7.009,20 |
+| média | R$ 101,65 |
+
+50.000 linhas cobrem uma rodada de 500 TPS por 100 s sem repetir. Rodadas mais
+longas reaproveitam a massa na mesma ordem; o reuso é normal e fica declarado.
+
+### 3.6 Geração e consumo: duas sementes distintas
+
+| Semente | Governa | Onde |
+|---------|---------|------|
+| `cmd/massa -seed` | a geração da massa | executada uma vez; o CSV é versionado |
+| `cmd/injector -seed` | a ordem de consumo | por rodada |
+
+O **CSV commitado é a fonte de verdade** dos experimentos; o gerador no
+repositório documenta o método. É a prática padrão em pesquisa reproduzível:
+publica-se o gerador e o artefato gerado.
+
+Há um motivo técnico forte para não depender apenas da semente. A
+reprodutibilidade a partir de semente quebra em silêncio quando o Go muda de
+versão: a 1.20 passou a semear as funções globais automaticamente e depreciou
+`rand.Seed`, a 1.22 adotou o ChaCha8 como gerador padrão dessas funções, e o
+`math/rand/v2` removeu o gerador da Go 1 por inteiro — preservar o fluxo do
+`Source` não bastaria, porque mudanças em `Intn` e `Float64` alteram os valores
+derivados.
+
+Daí três regras:
+
+1. `rand.New(rand.NewSource(semente))` explícito, **nunca** as funções globais
+   do `math/rand`;
+2. versão do Go travada no `go.mod`;
+3. **CSV commitado**, que torna as duas anteriores irrelevantes para quem
+   replicar: pega os mesmos bytes.
+
+### 3.7 A coluna `massa_id` no `raw.csv`
+
+O `raw.csv` ganhou uma coluna `massa_id`, que não constava da seção 5.4 do
+CLAUDE.md.
+
+Sem ela, o arquivo bruto traz STAN, latências e DE 39, mas **nenhuma ligação com
+a transação que os originou**. Não haveria como cruzar MCC, valor ou forma de
+captura com código de recusa ou latência — e a hipótese do trabalho fala em
+identificar *padrões* de erro, o que exige exatamente esse cruzamento.
+
+A coluna liga cada linha do `raw.csv` à linha correspondente de
+`data/massa.csv`, completando a cadeia:
+
+```
+raw.csv.massa_id  ->  massa.csv.id  ->  pan, mcc, amount, pos_entry_mode, ...
+raw.csv.stan      ->  correlação requisição/resposta dentro da rodada
+```
+
+Exemplo de cruzamento sobre uma rodada de 200 TPS:
+
+| pos_entry_mode | n | aprovação |
+|----------------|---|-----------|
+| 010 (digitado) | 601 | 83,4% |
+| 020 (tarja) | 638 | 83,7% |
+| 051 (chip) | 550 | 85,5% |
+| 071 (aproximação) | 623 | 84,8% |
+| 810 (e-commerce) | 588 | 85,2% |
+
+> **A uniformidade é o resultado esperado, e é importante entender por quê.** O
+> autorizador mock decide o DE 39 em função de (semente, STAN) apenas: ele é
+> deliberadamente **cego ao conteúdo da transação**, porque a seção 4 do
+> CLAUDE.md proíbe lógica de negócio no SUT. Nenhum padrão por atributo *pode*
+> emergir contra este alvo.
+>
+> O que a tabela demonstra é que o **aparato é capaz** de produzir o
+> cruzamento. Se o artigo precisar exibir um padrão de erro detectado, serão
+> necessários ou um alvo que correlacione recusas com atributos — o que
+> contraria a exigência de previsibilidade do mock — ou a apresentação honesta
+> deste caso como resultado nulo controlado. A decisão é de desenho do
+> experimento, e está registrada na seção 8.
 
 ---
 
@@ -760,6 +918,60 @@ média. A escolha é adequada ao critério de saturação, que pergunta se o inj
 ficou para trás, mas subestima a dispersão total do processo de chegadas. A
 caracterização completa do jitter está na tabela acima.
 
+### 6.9 A inversão do p99: a cauda piora em carga baixa
+
+Este é um resultado, não uma curiosidade da calibração, e merece figurar entre
+os achados do artigo.
+
+Contra o alvo trivial, o p99 da latência de serviço **não cresce com a carga —
+ele piora em carga baixa**:
+
+| Alvo | p99 serviço | p99 resposta |
+|------|-------------|--------------|
+| **100 TPS** | **34,9 ms** | 43,9 ms |
+| 250 TPS | 6,3 ms | 10,1 ms |
+| 500 TPS | 4,5 ms | 10,0 ms |
+| 1500 TPS | 7,4 ms | 23,4 ms |
+
+Uma diferença de quase uma ordem de grandeza entre 100 e 500 TPS, na direção
+contrária à intuição de que mais carga produz mais latência. Na primeira
+varredura o mesmo padrão apareceu: 9063 µs a 100 TPS contra 771 µs a 1500 TPS.
+
+#### Mecanismo
+
+A explicação é gerenciamento de energia, não enfileiramento.
+
+Em taxa baixa o processo fica ocioso entre requisições. O núcleo entra em
+estado de economia de energia e reduz frequência, e o despertar a partir do
+ocioso custa caro — a requisição seguinte paga a latência de transição de
+estado e de retomada de frequência. Em taxa alta o processo permanece quente e
+escalonado, e esse custo desaparece.
+
+Dean & Barroso (2013) listam o gerenciamento de energia entre as fontes de
+variabilidade de latência, exatamente neste sentido.
+
+O mecanismo também explica o outlier da seção 8.2: a repetição de 18,4 ms de
+atraso médio a 250 TPS é compatível com uma janela em que o sistema manteve os
+núcleos em estado de baixo consumo por mais tempo.
+
+#### Consequência para o desenho dos experimentos
+
+Se a inversão for confirmada, o piso de ruído do aparato **depende da taxa**, e
+depende dela na direção que prejudica a comparação: os níveis de carga baixa,
+que deveriam ser os mais limpos, são os mais contaminados na cauda. Comparar o
+p99 entre níveis sem tratar isso atribuiria ao sistema sob teste uma variação
+que é do aparato.
+
+#### Teste de confirmação (pendente)
+
+Plano de energia do Windows em desempenho máximo, rerodar apenas o nível de
+100 TPS, comparar o p99. Se cair, a hipótese está confirmada e o achado ganha
+mecanismo explicado em vez de ser um número estranho.
+
+O mesmo controle precisa então ser aplicado a **todas** as rodadas do
+experimento, e o plano de energia vigente passa a ser item obrigatório do bloco
+de ambiente.
+
 ---
 
 ## 7. Ambiente de execução
@@ -787,3 +999,98 @@ A segunda linha importa porque os testes automatizados usam um autorizador de
 mentira: o caminho de atendimento concorrente do binário real (`go handleConn`)
 só é exercitado executando os dois processos sob carga, com `GORACE` em
 `halt_on_error=1`.
+---
+
+## 8. Decisões revisadas durante a execução
+
+Três decisões de projeto foram revistas **depois** de ver dados. Ajuste
+retrospectivo é aceitável em pesquisa de engenharia, mas só se declarado como
+tal — do contrário o critério parece ter sido escolhido de antemão, e o leitor
+não tem como julgar se ele foi moldado pelo resultado.
+
+Cada revisão está registrada abaixo no formato: critério inicial, o que a
+execução revelou, critério revisado, justificativa.
+
+### 8.1 Métrica de validação do aparato: vazão → aderência ao agendamento
+
+**Critério inicial.** A vazão alcançada versus a pretendida seria "a métrica
+mais importante" do aparato.
+
+**O que a execução revelou.** Na calibração de 22/09/2026, a vazão ficou em
+**100% em todos os oito níveis, de 100 a 5000 TPS** — inclusive naqueles em que
+o processo de chegada já havia colapsado. O injetor entrega o número correto de
+requisições e recebe todas as respostas mesmo a 5000 TPS; o que ele não
+consegue é entregá-las nos instantes pretendidos. Uma calibração guiada pela
+vazão concluiria que o aparato sustenta 5000 TPS.
+
+**Critério revisado.** A validação do aparato passa a usar a **aderência ao
+agendamento**: a distribuição de (instante real de envio − instante pretendido),
+com os dois sinais preservados. A vazão permanece como métrica de saturação do
+*sistema sob teste*.
+
+**Justificativa.** As duas métricas respondem perguntas diferentes, e a segunda
+só tem sentido se a primeira passar:
+
+| Métrica | Pergunta |
+|---------|----------|
+| aderência ao agendamento | o injetor aplicou a carga que prometeu? |
+| vazão alcançada | o sistema sob teste deu conta da carga aplicada? |
+
+É a armadilha que Jiang & Hassan tratam na fase de execução do teste de carga.
+
+### 8.2 Critério de saturação: unanimidade → mediana entre repetições
+
+**Critério inicial.** Um nível de carga seria considerado sustentado apenas se
+**todas** as repetições passassem, sob o argumento de que um teto de aparato
+deve ser conservador.
+
+**O que a execução revelou.** A primeira varredura, com 3 repetições, produziu:
+
+```
+     100 TPS  atraso 766us  vazao 100%  sustentado
+     250 TPS  atraso 642us  vazao 100%  SATURADO
+     500 TPS  atraso 766us  vazao 100%  sustentado
+    2000 TPS  atraso 359us  vazao 100%  sustentado
+```
+
+Teto declarado: **100 TPS**, quando o injetor sustentava 2000 TPS com folga. A
+causa foi uma repetição isolada a 250 TPS com atraso médio de **18.410 µs**
+contra 642 µs das outras duas. Combinada com a regra de parar na primeira
+saturação, a unanimidade deixou o teto refém de um evento externo.
+
+**Critério revisado.** A decisão passa a usar a **mediana entre repetições**, e
+o número de repetições subiu de 3 para 5. As repetições reprovadas
+individualmente continuam contadas e registradas no `calibracao.json`.
+
+**Justificativa.** A mediana distingue incapacidade sistemática de sustentar a
+taxa, que é o que o teto deve medir, de um engasgo transitório da máquina. Com
+3 repetições a mediana é decidida por 2 votos, o que é frágil; 5 repetições dão
+margem. Kalibera & Jones é a âncora para justificar o número de repetições.
+
+**O outlier não deve ser escondido.** A repetição de 18,4 ms a 250 TPS é
+provavelmente o mesmo fenômeno descrito na seção 6.9 — despertar a partir de
+estado ocioso em taxa baixa. A mediana a remove da decisão, e ela permanece
+visível no relatório e no texto, com a explicação. Uma dispersão de uma ordem
+de grandeza é achado, não sujeira a varrer.
+
+### 8.3 Arquivos de dados: três CSVs → um de entrada mais duas saídas
+
+**Decisão inicial.** Os resultados preliminares descreviam três CSVs: massa de
+mensagens de entrada, registro de tempo de resposta, e classificação das
+transações como aprovadas ou negadas com seus códigos.
+
+**O que a execução revelou.** Apenas o primeiro é de entrada. Separar tempo de
+resposta e código de resposta em dois arquivos **perderia a correlação entre
+eles**, que é o cruzamento central da hipótese: para relacionar código de recusa
+com latência, os dois precisam estar na mesma linha.
+
+**Decisão revisada.** Um CSV de entrada (`data/massa.csv`) e duas saídas por
+rodada: `raw.csv`, com uma linha por requisição contendo latências e DE 39
+correlacionados por STAN, e `summary.json`, com o resumo consolidado e o bloco
+de ambiente.
+
+**Justificativa.** Além da correlação, o `raw.csv` ganhou a coluna `massa_id`,
+que liga cada requisição à transação de entrada que a originou. A cadeia
+completa — atributos da transação, latência e código de resposta — fica
+disponível para a análise sem nenhuma junção em tempo de execução. Ver seção
+3.7.

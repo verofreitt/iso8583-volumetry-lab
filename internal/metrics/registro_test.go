@@ -3,6 +3,7 @@ package metrics
 import (
 	"bytes"
 	"encoding/csv"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,6 +20,7 @@ func registroEm(indice int, atrasoEnvioMS, servicoMS int) Registro {
 	return Registro{
 		Indice:   indice,
 		STAN:     leftPad(indice),
+		MassaID:  fmt.Sprintf("m%03d", indice),
 		Agendado: agendado,
 		Envio:    envio,
 		Resposta: envio.Add(time.Duration(servicoMS) * time.Millisecond),
@@ -130,6 +132,7 @@ func TestEscreverCSVLayout(t *testing.T) {
 	falha := Registro{
 		Indice:   2,
 		STAN:     "000002",
+		MassaID:  "m002",
 		Agendado: base.Add(200 * time.Millisecond),
 		Envio:    base.Add(200 * time.Millisecond),
 		Erro:     "lendo a resposta: EOF",
@@ -147,7 +150,7 @@ func TestEscreverCSVLayout(t *testing.T) {
 	}
 
 	cabecalho := []string{
-		"stan", "ts_agendado", "ts_envio", "ts_resposta",
+		"stan", "massa_id", "ts_agendado", "ts_envio", "ts_resposta",
 		"latencia_servico_us", "latencia_resposta_us", "de39", "erro_transporte",
 	}
 	if len(linhas) != 3 {
@@ -164,26 +167,29 @@ func TestEscreverCSVLayout(t *testing.T) {
 	if bem[0] != "000001" {
 		t.Errorf("stan = %q, esperado 000001", bem[0])
 	}
-	if bem[4] != "10000" {
-		t.Errorf("latencia_servico_us = %q, esperado 10000", bem[4])
+	if bem[1] != "m001" {
+		t.Errorf("massa_id = %q, esperado m001: sem ele o raw.csv nao se liga a transacao", bem[1])
 	}
-	if bem[5] != "50000" {
-		t.Errorf("latencia_resposta_us = %q, esperado 50000", bem[5])
+	if bem[5] != "10000" {
+		t.Errorf("latencia_servico_us = %q, esperado 10000", bem[5])
 	}
-	if bem[6] != "00" {
-		t.Errorf("de39 = %q, esperado 00", bem[6])
+	if bem[6] != "50000" {
+		t.Errorf("latencia_resposta_us = %q, esperado 50000", bem[6])
 	}
-	if bem[7] != "" {
-		t.Errorf("erro_transporte = %q, esperado vazio", bem[7])
+	if bem[7] != "00" {
+		t.Errorf("de39 = %q, esperado 00", bem[7])
+	}
+	if bem[8] != "" {
+		t.Errorf("erro_transporte = %q, esperado vazio", bem[8])
 	}
 
 	// registro com falha: latencias em branco, nunca zero
 	ruim := linhas[2]
-	if ruim[3] != "" || ruim[4] != "" || ruim[5] != "" {
+	if ruim[4] != "" || ruim[5] != "" || ruim[6] != "" {
 		t.Errorf("linha com falha deveria ter resposta e latencias em branco, obtido %q", ruim)
 	}
-	if ruim[7] != "lendo a resposta: EOF" {
-		t.Errorf("erro_transporte = %q", ruim[7])
+	if ruim[8] != "lendo a resposta: EOF" {
+		t.Errorf("erro_transporte = %q", ruim[8])
 	}
 }
 
@@ -192,7 +198,7 @@ func TestEscreverCSVVazio(t *testing.T) {
 	if err := NovoColetor(0, 0).EscreverCSV(&buf); err != nil {
 		t.Fatalf("EscreverCSV: %v", err)
 	}
-	if !strings.HasPrefix(buf.String(), "stan,ts_agendado") {
+	if !strings.HasPrefix(buf.String(), "stan,massa_id,ts_agendado") {
 		t.Errorf("cabecalho ausente em coletor vazio: %q", buf.String())
 	}
 }

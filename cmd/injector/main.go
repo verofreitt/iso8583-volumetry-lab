@@ -21,11 +21,13 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"time"
 
 	moov "github.com/moov-io/iso8583"
 	"github.com/verofreitt/iso8583-volumetry-lab/internal/clock"
 	iso "github.com/verofreitt/iso8583-volumetry-lab/internal/iso8583"
+	"github.com/verofreitt/iso8583-volumetry-lab/internal/massa"
 	"github.com/verofreitt/iso8583-volumetry-lab/internal/metrics"
 	"github.com/verofreitt/iso8583-volumetry-lab/internal/ratelimit"
 )
@@ -48,6 +50,7 @@ type opcoes struct {
 	semente    int64
 	resultados string
 	sutConfig  string
+	massa      string
 }
 
 func main() {
@@ -61,6 +64,7 @@ func main() {
 	flag.IntVar(&o.conexoes, "conns", 8, "conexoes persistentes mantidas com o autorizador")
 	flag.IntVar(&o.repeticao, "rep", 1, "numero da repeticao, usado no nome da pasta de saida")
 	flag.Int64Var(&o.semente, "seed", 1, "semente da ordem de consumo da massa")
+	flag.StringVar(&o.massa, "massa", filepath.Join("data", "massa.csv"), "CSV da massa sintetica de entrada")
 	flag.StringVar(&o.resultados, "results", "results", "raiz onde a pasta da rodada e criada")
 	flag.StringVar(&o.sutConfig, "sut-config", "", "arquivo gravado pelo autorizador com --config-out, embutido no summary.json")
 	flag.Parse()
@@ -77,6 +81,13 @@ func executar(o opcoes) error {
 	if o.warmup >= o.duracao {
 		return fmt.Errorf("warmup (%v) deve ser menor que a duracao (%v): nao sobraria nada para medir", o.warmup, o.duracao)
 	}
+
+	m, err := massa.Ler(o.massa)
+	if err != nil {
+		return err
+	}
+	m.Embaralhar(o.semente)
+	log.Printf("massa: %d transacoes de %s, ordem pela semente %d", m.Tamanho(), o.massa, o.semente)
 
 	agendador, err := ratelimit.NovoAberto(o.tps, o.duracao)
 	if err != nil {
@@ -101,7 +112,7 @@ func executar(o opcoes) error {
 	defer parar()
 
 	res := agendador.Executar(ctx, func(ch ratelimit.Chegada) {
-		coletor.Registrar(requisitar(ctx, p, ch))
+		coletor.Registrar(requisitar(ctx, p, ch, m))
 	})
 
 	resumo, err := coletor.Resumir(
@@ -116,6 +127,8 @@ func executar(o opcoes) error {
 			Conexoes:           o.conexoes,
 			Repeticao:          o.repeticao,
 			Semente:            o.semente,
+			MassaArquivo:       o.massa,
+			MassaTransacoes:    m.Tamanho(),
 		},
 		agendamento(res, o.tps),
 		metrics.CapturarAmbiente(flagsInformadas(), configDoAutorizador(o.sutConfig)),
@@ -206,11 +219,13 @@ func flagsInformadas() map[string]string {
 // aquisicao da conexao, de modo que a espera pelo pool aparece na latencia de
 // resposta, que parte do instante agendado, mas nao na latencia de servico.
 // A diferenca entre as duas colunas e justamente o que o artigo discute.
-func requisitar(ctx context.Context, p *pool, ch ratelimit.Chegada) metrics.Registro {
-	req := requisicao(ch)
+func requisitar(ctx context.Context, p *pool, ch ratelimit.Chegada, m *massa.Massa) metrics.Registro {
+	t := m.Em(ch.Indice)
+	req := requisicao(ch, t)
 	reg := metrics.Registro{
 		Indice:   ch.Indice,
 		STAN:     req.STAN,
+		MassaID:  t.ID,
 		Agendado: ch.Agendado,
 	}
 
@@ -254,27 +269,31 @@ func ehTimeout(err error) bool {
 	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
-// requisicao monta a 0100 de uma chegada.
+// requisicao monta a 0100 de uma chegada a partir de uma transacao da massa.
 //
-// O STAN deriva do indice da chegada, o que garante unicidade dentro da rodada
-// e permite conferir a correlacao entre requisicao e resposta. O campo tem
-// seis digitos, entao a numeracao reinicia a cada milhao de requisicoes; o
-// limite esta registrado em docs/experimento.md.
+// A massa fornece os dados de negocio: PAN, valor, MCC, terminal e os demais
+// campos que descrevem a transacao. O que e gerado aqui sao os campos que
+// pertencem a requisicao e nao a transacao:
 //
-// Os demais valores sao fixos. A variacao da massa depende de internal/massa,
-// ainda nao implementado.
-func requisicao(ch ratelimit.Chegada) iso.Requisicao {
+//   - STAN (DE 11), derivado do indice da chegada. Precisa ser unico dentro da
+//     rodada porque e a chave de correlacao entre requisicao e resposta. O
+//     campo tem seis digitos, entao a numeracao reinicia a cada milhao de
+//     requisicoes; o limite esta registrado em docs/experimento.md.
+//   - RRN (DE 37), tambem derivado do indice, como referencia de rastreamento.
+//   - os campos temporais (DE 7, 12 e 13), derivados do instante de chegada
+//     pretendido e nao do relogio no momento do envio.
+func requisicao(ch ratelimit.Chegada, t massa.Transacao) iso.Requisicao {
 	return iso.Requisicao{
-		PAN:                   "9999990000000014",
-		ProcessingCode:        "000000",
-		Valor:                 "000000010000",
+		PAN:                   t.PAN,
+		ProcessingCode:        t.ProcessingCode,
+		Valor:                 t.Valor,
 		STAN:                  fmt.Sprintf("%06d", ch.Indice%1000000),
-		MCC:                   "5411",
-		POSEntryMode:          "021",
-		InstituicaoAdquirente: "000001",
-		RRN:                   "000000000001",
-		TerminalID:            "TERM0001",
-		Moeda:                 "986",
+		MCC:                   t.MCC,
+		POSEntryMode:          t.POSEntryMode,
+		InstituicaoAdquirente: t.Adquirente,
+		RRN:                   fmt.Sprintf("%012d", ch.Indice),
+		TerminalID:            t.TerminalID,
+		Moeda:                 t.Moeda,
 		Instante:              ch.Agendado,
 	}
 }

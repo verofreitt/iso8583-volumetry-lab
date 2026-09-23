@@ -121,6 +121,12 @@ type Rodada struct {
 	Conexoes           int       `json:"conexoes"`
 	Repeticao          int       `json:"repeticao"`
 	Semente            int64     `json:"semente"`
+
+	// MassaArquivo e MassaTransacoes identificam a massa de entrada usada.
+	// Sem elas nao ha como afirmar que duas rodadas consumiram os mesmos
+	// dados.
+	MassaArquivo    string `json:"massa_arquivo"`
+	MassaTransacoes int    `json:"massa_transacoes"`
 }
 
 // Ambiente registra o contexto de execucao.
