@@ -39,6 +39,12 @@ var (
 
 	// MCC segundo a ISO 18245, norma publica. Nenhum deles e especifico de
 	// bandeira.
+	//
+	// O 5967 entrou para servir de alvo ao controle positivo: e a categoria
+	// usada pelo experimento de --decline-bias, e precisa existir na massa
+	// para que haja transacoes a viesar. A escolha nao e arbitraria — marketing
+	// direto e uma categoria de risco mais alto, o que torna a hipotese de uma
+	// taxa de recusa distinta plausivel no texto.
 	mccs = []string{
 		"5411", // supermercados
 		"5812", // restaurantes
@@ -46,6 +52,7 @@ var (
 		"5912", // farmacias
 		"5999", // varejo diverso
 		"4111", // transporte de passageiros
+		"5967", // marketing direto, teleservicos de entrada
 	}
 
 	// POS entry mode: os dois primeiros digitos sao a forma de captura, o

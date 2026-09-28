@@ -19,6 +19,7 @@ type Config struct {
 	LatenciaDist   string        `json:"latency-dist"`
 	TaxaAprovacao  float64       `json:"approval-rate"`
 	DistRecusas    string        `json:"decline-dist"`
+	ViesRecusa     string        `json:"decline-bias"`
 	MaxConns       int           `json:"max-conns"`
 	Semente        int64         `json:"seed"`
 	EcoApenas      bool          `json:"echo-only"`

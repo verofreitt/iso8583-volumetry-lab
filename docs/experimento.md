@@ -3,9 +3,9 @@
 Documento de registro do aparato. Cada decisão que afeta a interpretação dos
 números medidos é registrada aqui, com a justificativa.
 
-Estado atual: **massa sintética implementada**, após a calibração do passo 6.
-Os limites declarados do aparato estão na seção 6.7; as decisões revistas
-durante a execução, na seção 8. As seções de ambiente, procedimento de execução e
+Estado atual: **capacidade de detecção validada** com controle negativo e
+positivo (seção 9). Os limites declarados do aparato estão na seção 6.7; as
+decisões revistas durante a execução, na seção 8. As seções de ambiente, procedimento de execução e
 resultados são preenchidas conforme os passos seguintes forem concluídos.
 
 ---
@@ -283,19 +283,14 @@ Exemplo de cruzamento sobre uma rodada de 200 TPS:
 | 071 (aproximação) | 623 | 84,8% |
 | 810 (e-commerce) | 588 | 85,2% |
 
-> **A uniformidade é o resultado esperado, e é importante entender por quê.** O
-> autorizador mock decide o DE 39 em função de (semente, STAN) apenas: ele é
-> deliberadamente **cego ao conteúdo da transação**, porque a seção 4 do
-> CLAUDE.md proíbe lógica de negócio no SUT. Nenhum padrão por atributo *pode*
-> emergir contra este alvo.
+> **A uniformidade é o resultado esperado contra um alvo sem viés.** O
+> autorizador mock decide o DE 39 em função de (semente, STAN) apenas, e nessa
+> configuração nenhum padrão por atributo pode emergir.
 >
-> O que a tabela demonstra é que o **aparato é capaz** de produzir o
-> cruzamento. Se o artigo precisar exibir um padrão de erro detectado, serão
-> necessários ou um alvo que correlacione recusas com atributos — o que
-> contraria a exigência de previsibilidade do mock — ou a apresentação honesta
-> deste caso como resultado nulo controlado. A decisão é de desenho do
-> experimento, e está registrada na seção 8.
-
+> Isso é o **controle negativo**. Sozinho, ele não sustenta a hipótese: um
+> instrumento que não encontra padrão não distingue "não há padrão" de "o
+> instrumento não detecta padrão". O controle positivo, com um viés conhecido
+> injetado no alvo pela flag `--decline-bias`, está na seção 9.
 ---
 
 ## 4. Autorizador mock
@@ -1094,3 +1089,153 @@ que liga cada requisição à transação de entrada que a originou. A cadeia
 completa — atributos da transação, latência e código de resposta — fica
 disponível para a análise sem nenhuma junção em tempo de execução. Ver seção
 3.7.
+---
+
+## 9. Validação da capacidade de detecção
+
+Um instrumento que não encontra padrão não distingue "não há padrão" de "o
+instrumento não detecta padrão". A hipótese do trabalho afirma que o injetor
+**permite identificar padrões de erro**; sustentar isso exige exibir o
+instrumento detectando um padrão conhecido.
+
+O experimento tem, portanto, dois lados:
+
+| Condição | Alvo | Papel |
+|----------|------|-------|
+| controle | recusa uniforme | controle **negativo** |
+| injetada | `--decline-bias mcc=5967:0.40` | controle **positivo** |
+
+### 9.1 Determinismo e ausência de correlação são exigências distintas
+
+A seção 4 do CLAUDE.md proíbe três coisas no autorizador mock: **lógica de
+negócio**, **estado oculto** e **adaptação dinâmica ao volume**. Uma regra
+estática e declarada não viola nenhuma delas.
+
+A confusão entre "o mock é determinístico" e "o mock não pode correlacionar
+recusa com atributo" foi um erro de leitura da restrição, corrigido antes do
+experimento. `--decline-bias` é verdade fundamental injetada deliberadamente no
+alvo: a taxa de recusa de um atributo declarado passa a ser o valor informado,
+em vez da taxa base. A regra é fixa, conhecida de antemão, não guarda estado
+entre requisições e não muda com a carga.
+
+A decisão continua sendo função pura de (semente, STAN, atributos da
+requisição). O sorteio vem do STAN; os atributos apenas escolhem **qual limiar**
+se aplica.
+
+### 9.2 Desenho
+
+Duas rodadas, idênticas em tudo exceto o viés:
+
+| Parâmetro | Valor |
+|-----------|-------|
+| taxa | 100 TPS |
+| duração | 5 min, com 30 s de warm-up descartado |
+| requisições medidas | 27.000 por condição |
+| conexões | 16 |
+| massa | `data/massa.csv`, semente de consumo 42 |
+| latência do alvo | 20 ms, sem jitter |
+| taxa de recusa base | 0,15 (`--approval-rate 0.85`) |
+| semente do alvo | 42 |
+
+A categoria alvo é o **MCC 5967**, marketing direto e teleserviços de entrada.
+A escolha não é arbitrária: é uma categoria de risco mais alto, o que torna a
+hipótese de uma taxa de recusa distinta plausível no texto. O MCC foi
+acrescentado ao conjunto declarado da massa para que existam transações a
+viesar — 3.808 das 27.000 requisições medidas, 14,1%.
+
+### 9.3 Resultados
+
+**Controle negativo** — recusa uniforme:
+
+| MCC | n | recusas | taxa | IC 95% |
+|-----|---|---------|------|--------|
+| 4111 | 3861 | 551 | 0,1427 | [0,1320, 0,1541] |
+| 5411 | 3886 | 566 | 0,1457 | [0,1349, 0,1571] |
+| 5541 | 3924 | 599 | 0,1527 | [0,1417, 0,1642] |
+| 5812 | 3808 | 540 | 0,1418 | [0,1311, 0,1532] |
+| 5912 | 3804 | 556 | 0,1462 | [0,1353, 0,1577] |
+| 5967 | 3808 | 594 | 0,1560 | [0,1448, 0,1679] |
+| 5999 | 3909 | 578 | 0,1479 | [0,1371, 0,1593] |
+
+χ² = 4,857 com 6 graus de liberdade, **p = 0,562**. Independência **não
+rejeitada**: não há evidência de que a recusa dependa do MCC. Todos os
+intervalos contêm a taxa base de 0,15.
+
+**Controle positivo** — `mcc=5967:0.40`:
+
+| MCC | n | recusas | taxa | IC 95% |
+|-----|---|---------|------|--------|
+| 4111 | 3861 | 551 | 0,1427 | [0,1320, 0,1541] |
+| 5411 | 3886 | 566 | 0,1457 | [0,1349, 0,1571] |
+| 5541 | 3924 | 599 | 0,1527 | [0,1417, 0,1642] |
+| 5812 | 3808 | 540 | 0,1418 | [0,1311, 0,1532] |
+| 5912 | 3804 | 556 | 0,1462 | [0,1353, 0,1577] |
+| **5967** | 3808 | **1558** | **0,4091** | **[0,3936, 0,4248]** |
+| 5999 | 3909 | 578 | 0,1479 | [0,1371, 0,1593] |
+
+χ² = 1513,19 com 6 graus de liberdade, **p < 10⁻¹²**. Independência
+**rejeitada**.
+
+**A taxa injetada foi recuperada.** O intervalo de confiança de 95% do MCC 5967,
+[0,3936, 0,4248], contém o valor injetado de **0,40** e não contém a taxa base
+de 0,15.
+
+### 9.4 A comparação é perfeitamente controlada
+
+Os seis MCCs não viesados têm contagem de recusa **byte a byte idêntica** entre
+as duas condições:
+
+| MCC | controle | injetada | idêntico |
+|-----|----------|----------|----------|
+| 4111 | 551 | 551 | sim |
+| 5411 | 566 | 566 | sim |
+| 5541 | 599 | 599 | sim |
+| 5812 | 540 | 540 | sim |
+| 5912 | 556 | 556 | sim |
+| 5967 | 594 | **1558** | não |
+| 5999 | 578 | 578 | sim |
+
+Não é coincidência, e é consequência direta do desenho determinístico descrito
+na seção 4.2: a decisão é função pura de (semente, STAN), e o viés altera
+apenas o limiar das transações que casam com ele. Nenhuma outra transação muda
+de desfecho.
+
+A consequência metodológica é forte: **a única diferença entre as duas
+condições é o sinal injetado**. Não há confundimento possível — nem por ordem
+de consumo da massa, nem por escalonamento, nem por estado acumulado. Um
+experimento com gerador pseudoaleatório compartilhado não teria essa
+propriedade, porque o mapeamento entre valores sorteados e requisições
+dependeria do escalonador.
+
+### 9.5 Conclusão
+
+O aparato detecta um padrão de erro por atributo quando ele existe, e não o
+reporta quando não existe. As duas afirmações são necessárias, e nenhuma delas
+sozinha sustentaria a hipótese.
+
+O que o experimento **não** demonstra é capacidade de descobrir padrões
+desconhecidos: o atributo testado foi escolhido de antemão. Testar muitos
+atributos em busca de significância exigiria correção para comparações
+múltiplas, e isso fica como limitação declarada.
+
+### 9.6 Reprodução
+
+```sh
+go run ./cmd/authorizer -latency-base 20ms -approval-rate 0.85 -seed 42 \
+  -config-out aut.json &
+go run ./cmd/injector -tps 100 -duration 5m -warmup 30s -conns 16 -seed 42 \
+  -sut-config aut.json -results results/controle-positivo -rep 1
+
+go run ./cmd/authorizer -latency-base 20ms -approval-rate 0.85 -seed 42 \
+  -decline-bias "mcc=5967:0.40" -config-out aut.json &
+go run ./cmd/injector -tps 100 -duration 5m -warmup 30s -conns 16 -seed 42 \
+  -sut-config aut.json -results results/controle-positivo -rep 2
+
+go run ./analysis/qui2 -raw results/controle-positivo/<rodada>/raw.csv -atributo mcc
+```
+
+A análise usa apenas a biblioteca padrão. O qui-quadrado e o intervalo de
+Wilson estão implementados em `analysis/qui2/estatistica.go` e ancorados em
+percentis tabelados por `TestQui2ContraValoresConhecidos` — uma implementação
+errada da função gama incompleta produziria p-valores plausíveis e falsos, que
+é o pior modo de falha possível para uma análise que vai ao artigo.

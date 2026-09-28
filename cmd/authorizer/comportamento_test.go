@@ -98,7 +98,7 @@ func TestDecidirEhDeterministico(t *testing.T) {
 		de39 string
 	}{}
 	for _, s := range stans {
-		lat, de39 := c.Decidir(s)
+		lat, de39 := c.Decidir(s, nil)
 		primeira[s] = struct {
 			lat  time.Duration
 			de39 string
@@ -108,8 +108,8 @@ func TestDecidirEhDeterministico(t *testing.T) {
 	// repete em ordem inversa e intercalada: o resultado nao pode mudar
 	for i := len(stans) - 1; i >= 0; i-- {
 		s := stans[i]
-		c.Decidir("999998") // chamada intercalada, para embaralhar qualquer estado
-		lat, de39 := c.Decidir(s)
+		c.Decidir("999998", nil) // chamada intercalada, para embaralhar qualquer estado
+		lat, de39 := c.Decidir(s, nil)
 		if lat != primeira[s].lat || de39 != primeira[s].de39 {
 			t.Errorf("STAN %s: (%v, %s) na segunda chamada, (%v, %s) na primeira",
 				s, lat, de39, primeira[s].lat, primeira[s].de39)
@@ -126,12 +126,12 @@ func TestDecidirIndependeDaConcorrencia(t *testing.T) {
 	})
 
 	const stan = "000123"
-	esperadoLat, esperadoDE39 := c.Decidir(stan)
+	esperadoLat, esperadoDE39 := c.Decidir(stan, nil)
 
 	resultados := make(chan string, 64)
 	for i := 0; i < 64; i++ {
 		go func() {
-			lat, de39 := c.Decidir(stan)
+			lat, de39 := c.Decidir(stan, nil)
 			resultados <- fmt.Sprintf("%v/%s", lat, de39)
 		}()
 	}
@@ -153,8 +153,8 @@ func TestSementesDiferentesMudamAsDecisoes(t *testing.T) {
 	diferencas := 0
 	for i := 0; i < 1000; i++ {
 		stan := fmt.Sprintf("%06d", i)
-		_, da := a.Decidir(stan)
-		_, db := b.Decidir(stan)
+		_, da := a.Decidir(stan, nil)
+		_, db := b.Decidir(stan, nil)
 		if da != db {
 			diferencas++
 		}
@@ -176,7 +176,7 @@ func TestTaxaDeAprovacao(t *testing.T) {
 
 			aprovadas := 0
 			for i := 0; i < amostras; i++ {
-				if _, de39 := c.Decidir(fmt.Sprintf("%06d", i)); de39 == aprovado {
+				if _, de39 := c.Decidir(fmt.Sprintf("%06d", i), nil); de39 == aprovado {
 					aprovadas++
 				}
 			}
@@ -199,7 +199,7 @@ func TestDistribuicaoDeRecusas(t *testing.T) {
 	const amostras = 40000
 	contagem := map[string]int{}
 	for i := 0; i < amostras; i++ {
-		_, de39 := c.Decidir(fmt.Sprintf("%06d", i))
+		_, de39 := c.Decidir(fmt.Sprintf("%06d", i), nil)
 		contagem[de39]++
 	}
 
@@ -221,7 +221,7 @@ func TestLatenciaBaseSemJitter(t *testing.T) {
 	c := novo(t, func(c *Config) { c.LatenciaBase = 7 * time.Millisecond })
 
 	for i := 0; i < 100; i++ {
-		lat, _ := c.Decidir(fmt.Sprintf("%06d", i))
+		lat, _ := c.Decidir(fmt.Sprintf("%06d", i), nil)
 		if lat != 7*time.Millisecond {
 			t.Fatalf("latencia = %v, esperado 7ms sem jitter", lat)
 		}
@@ -250,7 +250,7 @@ func TestDistribuicoesTemMediaIgualAoJitter(t *testing.T) {
 			var soma float64
 			minimo := time.Duration(math.MaxInt64)
 			for i := 0; i < amostras; i++ {
-				lat, _ := c.Decidir(fmt.Sprintf("%06d", i))
+				lat, _ := c.Decidir(fmt.Sprintf("%06d", i), nil)
 				if lat < minimo {
 					minimo = lat
 				}
@@ -282,7 +282,7 @@ func TestLognormalTemCaudaMaisPesada(t *testing.T) {
 			c.LatenciaDist = string(dist)
 		})
 		for i := 0; i < amostras; i++ {
-			if lat, _ := c.Decidir(fmt.Sprintf("%06d", i)); lat > maximo[dist] {
+			if lat, _ := c.Decidir(fmt.Sprintf("%06d", i), nil); lat > maximo[dist] {
 				maximo[dist] = lat
 			}
 		}
@@ -310,7 +310,7 @@ func TestEcoApenasIgnoraTodoORestante(t *testing.T) {
 	})
 
 	for i := 0; i < 100; i++ {
-		lat, de39 := c.Decidir(fmt.Sprintf("%06d", i))
+		lat, de39 := c.Decidir(fmt.Sprintf("%06d", i), nil)
 		if lat != 0 {
 			t.Fatalf("latencia = %v em modo eco, esperado 0", lat)
 		}

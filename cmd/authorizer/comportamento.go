@@ -52,6 +52,7 @@ type Comportamento struct {
 	dist      Distribuicao
 	aprovacao float64
 	recusas   []recusa
+	vieses    []Vies
 	semente   int64
 	ecoApenas bool
 }
@@ -77,8 +78,21 @@ func NovoComportamento(c Config) (*Comportamento, error) {
 	if err != nil {
 		return nil, err
 	}
-	if c.TaxaAprovacao < 1 && len(recusas) == 0 {
-		return nil, fmt.Errorf("approval-rate menor que 1 exige decline-dist nao vazia")
+
+	vieses, err := parsearVieses(c.ViesRecusa)
+	if err != nil {
+		return nil, err
+	}
+
+	// qualquer caminho que possa recusar precisa de codigos para sortear
+	podeRecusar := c.TaxaAprovacao < 1
+	for _, v := range vieses {
+		if v.Taxa > 0 {
+			podeRecusar = true
+		}
+	}
+	if podeRecusar && len(recusas) == 0 {
+		return nil, fmt.Errorf("recusa possivel (approval-rate menor que 1 ou decline-bias com taxa positiva) exige decline-dist nao vazia")
 	}
 
 	return &Comportamento{
@@ -87,13 +101,21 @@ func NovoComportamento(c Config) (*Comportamento, error) {
 		dist:      dist,
 		aprovacao: c.TaxaAprovacao,
 		recusas:   recusas,
+		vieses:    vieses,
 		semente:   c.Semente,
 		ecoApenas: c.EcoApenas,
 	}, nil
 }
 
 // Decidir devolve a latencia de servico a aplicar e o codigo do DE 39.
-func (c *Comportamento) Decidir(stan string) (time.Duration, string) {
+//
+// ler e consultado apenas para os atributos que tem vies configurado. Sem
+// vieses, nenhuma leitura ocorre e o caminho critico fica inalterado.
+//
+// A decisao continua sendo funcao pura de (semente, STAN, atributos da
+// requisicao): o sorteio vem do STAN, e os atributos apenas escolhem qual taxa
+// de recusa se aplica. Nao ha estado entre requisicoes.
+func (c *Comportamento) Decidir(stan string, ler LeitorAtributo) (time.Duration, string) {
 	if c.ecoApenas {
 		return 0, aprovado
 	}
@@ -105,7 +127,7 @@ func (c *Comportamento) Decidir(stan string) (time.Duration, string) {
 		latencia += c.dispersao(&f)
 	}
 
-	return latencia, c.codigo(&f)
+	return latencia, c.codigo(&f, ler)
 }
 
 // dispersao sorteia o acrescimo aleatorio a latencia base.
@@ -124,8 +146,15 @@ func (c *Comportamento) dispersao(f *fonte) time.Duration {
 }
 
 // codigo decide entre aprovacao e recusa, e qual recusa.
-func (c *Comportamento) codigo(f *fonte) string {
-	if f.uniforme() < c.aprovacao {
+//
+// O limiar e escrito como taxa de aprovacao efetiva, e nao como taxa de
+// recusa, para que o mapeamento entre o valor sorteado e o desfecho seja
+// identico ao de antes da introducao do vies: sem vies configurado, uma rodada
+// reproduz exatamente os resultados anteriores.
+func (c *Comportamento) codigo(f *fonte, ler LeitorAtributo) string {
+	aprovacaoEfetiva := 1 - c.taxaDeRecusa(ler)
+
+	if f.uniforme() < aprovacaoEfetiva {
 		return aprovado
 	}
 

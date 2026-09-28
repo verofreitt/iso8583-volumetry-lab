@@ -45,6 +45,7 @@ func main() {
 	flag.StringVar(&c.LatenciaDist, "latency-dist", string(Exponencial), "distribuicao da dispersao: exponencial ou lognormal")
 	flag.Float64Var(&c.TaxaAprovacao, "approval-rate", 1, "proporcao de respostas 00, entre 0 e 1")
 	flag.StringVar(&c.DistRecusas, "decline-dist", "51:40,05:30,14:20,91:10", "distribuicao dos codigos de recusa")
+	flag.StringVar(&c.ViesRecusa, "decline-bias", "", "vies estatico de recusa por atributo, formato atributo=valor:taxa (ex.: mcc=5967:0.40)")
 	flag.IntVar(&c.MaxConns, "max-conns", 0, "teto de requisicoes atendidas simultaneamente; 0 remove o teto")
 	flag.Int64Var(&c.Semente, "seed", 1, "semente das decisoes do mock")
 	flag.BoolVar(&c.EcoApenas, "echo-only", false, "responde imediatamente, sem latencia nem sorteio, para calibrar o injetor")
@@ -83,6 +84,9 @@ func main() {
 	} else {
 		log.Printf("autorizador: base %v, jitter %v (%s), aprovacao %.3f, recusas %q, semente %d",
 			c.LatenciaBase, c.LatenciaJitter, c.LatenciaDist, c.TaxaAprovacao, c.DistRecusas, c.Semente)
+		if c.ViesRecusa != "" {
+			log.Printf("vies de recusa: %s", c.ViesRecusa)
+		}
 	}
 	if c.MaxConns > 0 {
 		log.Printf("teto de %d requisicoes simultaneas", c.MaxConns)
@@ -184,7 +188,17 @@ func (s *servidor) responder(requisicao []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	latencia, de39 := s.comportamento.Decidir(stan)
+	latencia, de39 := s.comportamento.Decidir(stan, func(atributo string) string {
+		de, ok := DEDoAtributo(atributo)
+		if !ok {
+			return ""
+		}
+		valor, err := req.GetString(de)
+		if err != nil {
+			return ""
+		}
+		return valor
+	})
 	if latencia > 0 {
 		time.Sleep(latencia)
 	}

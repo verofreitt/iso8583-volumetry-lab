@@ -119,10 +119,41 @@ Configurável por flags, tudo determinístico dada uma semente:
 - `--decline-dist` — distribuição dos códigos de recusa (ex.: `51:40,05:30,14:20,91:10`)
 - `--max-conns` — teto de conexões simultâneas, para permitir provocar saturação
 - `--seed`
+- `--decline-bias` — viés estático de recusa por atributo, formato
+  `atributo=valor:taxa` (ex.: `mcc=5967:0.40`), aplicado sobre a taxa base
 
 Não adicione lógica de negócio, cache, ou qualquer adaptação dinâmica ao volume.
 Qualquer não-linearidade no resultado precisa vir de contenção real de recursos,
 não de esperteza do mock.
+
+### 4.1 Determinismo e ausência de correlação não são a mesma exigência
+
+O que a seção acima proíbe são três coisas: **lógica de negócio**, **estado
+oculto** e **adaptação dinâmica ao volume**. Uma regra estática e declarada não
+viola nenhuma delas.
+
+`--decline-bias` é exatamente isso: uma verdade fundamental injetada
+deliberadamente no alvo. A taxa de recusa de um atributo declarado passa a ser
+o valor informado, em vez da taxa base. A regra é fixa, conhecida de antemão,
+não guarda estado entre requisições e não muda com a carga.
+
+**É assim que se valida qualquer instrumento de detecção.** Sem um sinal
+conhecido no alvo, uma medição que não encontra padrão não distingue "não há
+padrão" de "o instrumento não detecta padrão". O experimento precisa dos dois
+lados:
+
+| Condição | Alvo | Resultado esperado |
+|----------|------|--------------------|
+| controle | recusa uniforme | independência **não** rejeitada |
+| injetada | `--decline-bias mcc=5967:0.40`, base 0.15 | independência rejeitada, taxa recuperada dentro do IC |
+
+As duas condições rodam à mesma taxa, mesma duração e mesma massa, e a análise
+é um qui-quadrado de independência sobre a tabela de contingência
+recusa × atributo.
+
+O controle é o **controle negativo**; a condição injetada é o **controle
+positivo**. Reportar apenas o primeiro deixaria a capacidade de detecção sem
+evidência.
 
 ---
 
@@ -182,8 +213,17 @@ o artigo possa discutir a diferença.
 
 Duas coisas, por rodada, em `results/<timestamp>-<tps>-<rep>/`:
 
-1. `raw.csv` — uma linha por requisição: `stan, ts_agendado, ts_envio,
-   ts_resposta, latencia_servico_us, latencia_resposta_us, de39, erro_transporte`
+1. `raw.csv` — uma linha por requisição: `stan, massa_id, ts_agendado,
+   ts_envio, ts_resposta, latencia_servico_us, latencia_resposta_us, de39,
+   erro_transporte`
+
+   **`massa_id` é requisito, não conveniência.** É a chave que liga a
+   requisição à transação de entrada que a originou, em `data/massa.csv`. Sem
+   ela não há como auditar recusa contra atributo — cruzar MCC, valor ou forma
+   de captura com código de resposta e latência — e a hipótese do trabalho fala
+   justamente em identificar *padrões* de erro. O `stan` correlaciona
+   requisição e resposta dentro da rodada; o `massa_id` correlaciona a
+   requisição com seus atributos de negócio.
 2. `summary.json` — o resumo consolidado **mais o ambiente completo**:
    versão do Go, `GOMAXPROCS`, número de CPUs, sistema operacional, todas as
    flags dos dois processos, semente, e a linha de comando exata.

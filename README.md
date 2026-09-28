@@ -25,6 +25,7 @@ entrada. O aparato está calibrado e seus limites declarados.
 | 5 | Flags de configuração do mock | **concluído** |
 | 6 | Baseline de calibração | **concluído** |
 | — | Massa sintética de entrada | **concluído** |
+| — | Validação da detecção (controle negativo e positivo) | **concluído** |
 | 7 | Execução dos experimentos | pendente |
 
 ## Requisitos
@@ -121,6 +122,7 @@ go run ./cmd/authorizer --latency-base 20ms --latency-jitter 10ms   --approval-r
 | `--latency-dist` | `exponencial` | forma da dispersão: `exponencial` ou `lognormal` |
 | `--approval-rate` | `1` | proporção de respostas `00` |
 | `--decline-dist` | `51:40,05:30,14:20,91:10` | pesos dos códigos de recusa |
+| `--decline-bias` | — | viés estático por atributo, `atributo=valor:taxa` |
 | `--max-conns` | `0` | teto de requisições simultâneas; 0 remove o teto |
 | `--seed` | `1` | semente das decisões |
 | `--echo-only` | `false` | responde imediatamente, para calibrar o injetor |
@@ -295,6 +297,51 @@ teto declarado é a maior taxa sustentada **antes da primeira saturação**: um
 nível alto que volta a passar depois de um nível saturado é coincidência, não
 capacidade.
 
+## Validação da capacidade de detecção
+
+Um instrumento que não encontra padrão não distingue "não há padrão" de "o
+instrumento não detecta padrão". A hipótese do trabalho afirma que o injetor
+permite **identificar padrões de erro**, o que exige exibi-lo detectando um
+padrão conhecido.
+
+A flag `--decline-bias` injeta uma verdade fundamental no alvo: a taxa de
+recusa de um atributo declarado passa a ser o valor informado, em vez da taxa
+base. A regra é estática, declarada e determinística — não é lógica de negócio,
+não guarda estado e não muda com a carga.
+
+```sh
+# controle negativo: recusa uniforme
+go run ./cmd/authorizer -approval-rate 0.85 -seed 42
+
+# controle positivo: MCC 5967 com taxa 0,40 sobre base 0,15
+go run ./cmd/authorizer -approval-rate 0.85 -seed 42 -decline-bias "mcc=5967:0.40"
+
+# análise
+go run ./analysis/qui2 -raw results/<rodada>/raw.csv -atributo mcc
+```
+
+### Resultado
+
+Duas rodadas de 100 TPS por 5 min, 27.000 requisições medidas cada, idênticas
+em tudo exceto o viés:
+
+| Condição | χ² (6 gl) | p-valor | Independência |
+|----------|-----------|---------|---------------|
+| controle | 4,86 | 0,562 | **não** rejeitada |
+| injetada | 1513,19 | < 10⁻¹² | **rejeitada** |
+
+Na condição injetada, a taxa do MCC 5967 foi **0,4091 com IC 95% de [0,3936,
+0,4248]** — contém o valor injetado de 0,40 e exclui a base de 0,15. A taxa foi
+recuperada.
+
+Os seis MCCs não viesados têm contagem de recusa **byte a byte idêntica** entre
+as condições. Isso decorre do desenho determinístico: a decisão é função pura
+de (semente, STAN), e o viés altera apenas o limiar das transações que casam
+com ele. A única diferença entre as condições é o sinal injetado, sem
+confundimento possível.
+
+O detalhamento está em [docs/experimento.md](docs/experimento.md), seção 9.
+
 ## Limites conhecidos do aparato
 
 Apurados pela calibração de 22/09/2026 e registrados em
@@ -448,7 +495,7 @@ internal/metrics/    coleta de latência e consolidação
 internal/massa/      leitura dos CSVs de entrada (pendente)
 data/massa.csv       massa sintética de entrada (versionada)
 results/             saída bruta, uma pasta por rodada
-analysis/            scripts de estatística e gráficos
+analysis/qui2/       teste de independência recusa × atributo
 docs/experimento.md  ambiente, decisões de projeto e procedimento
 ```
 
