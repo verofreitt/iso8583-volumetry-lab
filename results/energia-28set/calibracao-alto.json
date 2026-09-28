@@ -1,0 +1,125 @@
+{
+  "procedimento": {
+    "niveis_tps": [
+      100
+    ],
+    "repeticoes": 5,
+    "duracao": "15s",
+    "warmup": "5s",
+    "conexoes": 32,
+    "limiar_vazao_percentual": 99,
+    "modo_do_alvo": "--echo-only",
+    "inicio": "2026-09-28T10:16:42.9111106-03:00",
+    "fim": "2026-09-28T10:18:03.8907359-03:00"
+  },
+  "limites": {
+    "teto_injecao_tps": 100,
+    "piso_atraso_agendamento_us": 625,
+    "piso_servico_mediana_us": 235,
+    "ruido_p99_minimo_us": 1465,
+    "ruido_p99_mediana_us": 1465,
+    "ruido_p99_maximo_us": 1465,
+    "observacoes": [
+      "nenhum nivel saturou: o teto esta acima da faixa varrida e nao foi determinado",
+      "o piso de atraso e a granularidade do temporizador do sistema operacional, nao contencao do injetor: ele nao diminui em taxas baixas",
+      "o p99 foi medido contra --echo-only e nao cresce com a carga; a variacao entre niveis e ruido ambiente da maquina, nao enfileiramento",
+      "uma latencia de servico configurada abaixo do p99 maximo nao e distinguivel do aparato na cauda"
+    ]
+  },
+  "niveis": [
+    {
+      "tps": 100,
+      "repeticoes": [
+        {
+          "atraso_medio_us": 795,
+          "atraso_maximo_us": 33958,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 237,
+          "p99_servico_us": 9207,
+          "p99_9_servico_us": 38367,
+          "mediana_resposta_us": 867,
+          "p99_resposta_us": 19887,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 625,
+          "atraso_maximo_us": 28003,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 237,
+          "p99_servico_us": 1416,
+          "p99_9_servico_us": 6447,
+          "mediana_resposta_us": 827,
+          "p99_resposta_us": 2713,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 601,
+          "atraso_maximo_us": 2334,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 233,
+          "p99_servico_us": 1465,
+          "p99_9_servico_us": 3697,
+          "mediana_resposta_us": 862,
+          "p99_resposta_us": 2533,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 600,
+          "atraso_maximo_us": 5969,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 235,
+          "p99_servico_us": 1171,
+          "p99_9_servico_us": 5819,
+          "mediana_resposta_us": 868,
+          "p99_resposta_us": 2581,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 648,
+          "atraso_maximo_us": 28553,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 234,
+          "p99_servico_us": 4053,
+          "p99_9_servico_us": 6171,
+          "mediana_resposta_us": 856,
+          "p99_resposta_us": 6163,
+          "erros_transporte": 0,
+          "timeouts": 0
+        }
+      ],
+      "intervalo_entre_chegadas_us": 10000,
+      "atraso_medio_us": 625,
+      "atraso_maximo_us": 28003,
+      "percentual_do_alvo": 100,
+      "mediana_servico_us": 235,
+      "p99_servico_us": 1465,
+      "p99_9_servico_us": 6171,
+      "mediana_resposta_us": 862,
+      "p99_resposta_us": 2713,
+      "falhas": 0,
+      "repeticoes_com_falha": 0,
+      "sustentado": true
+    }
+  ],
+  "ambiente": {
+    "versao_go": "go1.25.3",
+    "num_cpu": 4,
+    "goos": "windows",
+    "goarch": "amd64",
+    "gogc_imposto": "nao imposto (herda o ambiente)",
+    "gomaxprocs_injetor": 0,
+    "gomaxprocs_autorizador": 0,
+    "relogio_fonte": "QueryPerformanceCounter",
+    "relogio_resolucao_ns": 100,
+    "linha_de_comando": "C:\\Users\\verof\\AppData\\Local\\go-build\\d8\\d8d49ee5f26c6897352802e707ee476f571eeaa89773ca01cde6426aca1c56f9-d\\calibrate.exe -levels 100 -reps 5 -duration 15s -warmup 5s -conns 32 -out C:/Users/verof/AppData/Local/Temp/claude/c--Users-verof-OneDrive-Documentos-TCC-iso8583-volumetry-lab/5f96aab6-c270-414d-a045-8a8d8eda1219/scratchpad/energia-alto"
+  }
+}

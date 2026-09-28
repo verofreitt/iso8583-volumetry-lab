@@ -353,7 +353,7 @@ Apurados pela calibração de 22/09/2026 e registrados em
 | Primeira taxa saturada | 1000 TPS |
 | Piso de atraso de agendamento | 1166 µs |
 | Piso de serviço (ida e volta em loopback) | 278 µs |
-| Ruído na cauda, p99 | 4,5 ms mín., 17,7 ms mediana, 34,9 ms máx. |
+| Ruído na cauda, p99 | 1,1 a 34,9 ms — **não reprodutível entre sessões** |
 
 **Nenhum experimento deve ser executado acima de 500 TPS.** Acima disso, o
 atraso médio de agendamento supera o intervalo entre chegadas e o resultado
@@ -365,6 +365,18 @@ injetor entrega o número correto de requisições e recebe todas as respostas a
 acima do teto, a carga deixa de ser um fluxo uniforme e passa a chegar em
 rajadas. Uma calibração que olhasse só para a vazão concluiria, erradamente,
 que o aparato sustenta 5000 TPS.
+
+### A cauda não é reprodutível entre sessões
+
+O p99 da latência de serviço a 100 TPS, na mesma configuração e no mesmo plano
+de energia, mediu 9,1 ms, 34,9 ms e 1,3 ms em três sessões diferentes. A taxa
+não explica a diferença, e um teste pareado em 28/09 descartou o plano de
+energia como causa (seção 6.9 do `docs/experimento.md`).
+
+A consequência prática: **o p99 de uma rodada isolada não é comparável ao de
+outra sessão.** Comparações de cauda exigem rodadas pareadas na mesma sessão.
+A mediana, em contraste, é estável — variou apenas entre 235 e 250 µs nos
+mesmos testes.
 
 ### De onde vem o teto
 

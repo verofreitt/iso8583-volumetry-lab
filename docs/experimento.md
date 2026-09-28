@@ -813,8 +813,9 @@ Antes de uma rodada que vá para o artigo:
   registradas aqui, mas com ele ativo a varredura deve ser feita a partir de
   uma pasta fora da sincronização;
 - evite compilar, indexar ou navegar durante a varredura;
-- mantenha o plano de energia em desempenho máximo, já que o escalonamento de
-  frequência afeta diretamente a cauda.
+- fixe o plano de energia e **registre qual**. O teste da seção 6.9 mostrou que
+  o plano afeta a mediana em cerca de 6% mas **não** explica a cauda; fixá-lo
+  remove uma variável, não resolve a dispersão.
 
 Nenhuma dessas medidas elimina o ruído. Elas reduzem a chance de uma repetição
 isolada contaminar o resultado — e o critério pela mediana existe justamente
@@ -913,59 +914,104 @@ média. A escolha é adequada ao critério de saturação, que pergunta se o inj
 ficou para trás, mas subestima a dispersão total do processo de chegadas. A
 caracterização completa do jitter está na tabela acima.
 
-### 6.9 A inversão do p99: a cauda piora em carga baixa
+### 6.9 A variação do p99 em carga baixa: hipótese testada e não confirmada
 
-Este é um resultado, não uma curiosidade da calibração, e merece figurar entre
-os achados do artigo.
+Durante a calibração observou-se que o p99 da latência de serviço **não cresce
+com a carga** e chega a piorar em taxas baixas:
 
-Contra o alvo trivial, o p99 da latência de serviço **não cresce com a carga —
-ele piora em carga baixa**:
+| Varredura | 100 TPS | 250–500 TPS | 1500 TPS |
+|-----------|---------|-------------|----------|
+| 22/09, 3 repetições | 9063 µs | 6331 / 4499 µs | 771 µs |
+| 22/09, 5 repetições | 34.879 µs | 6331 / 4499 µs | 7359 µs |
 
-| Alvo | p99 serviço | p99 resposta |
-|------|-------------|--------------|
-| **100 TPS** | **34,9 ms** | 43,9 ms |
-| 250 TPS | 6,3 ms | 10,1 ms |
-| 500 TPS | 4,5 ms | 10,0 ms |
-| 1500 TPS | 7,4 ms | 23,4 ms |
+A explicação candidata era **gerenciamento de energia**: em taxa baixa o
+processo fica ocioso entre requisições, o núcleo entra em estado de economia e
+reduz frequência, e o despertar a partir do ocioso custa caro. Em taxa alta o
+processo permanece quente e escalonado. Dean & Barroso (2013) listam
+gerenciamento de energia entre as fontes de variabilidade de latência.
 
-Uma diferença de quase uma ordem de grandeza entre 100 e 500 TPS, na direção
-contrária à intuição de que mais carga produz mais latência. Na primeira
-varredura o mesmo padrão apareceu: 9063 µs a 100 TPS contra 771 µs a 1500 TPS.
+A hipótese foi testada em 28/09/2026. **Não se confirmou.**
 
-#### Mecanismo
+#### Desenho do teste
 
-A explicação é gerenciamento de energia, não enfileiramento.
+Comparar contra a varredura de 22/09 seria inválido: o estado da máquina
+derivou entre as sessões, e a mesma configuração produziu 9063 µs numa
+varredura e 34.879 µs na outra. O teste foi, portanto, um **A/B pareado na
+mesma sessão**: linha de base no plano vigente, troca de plano, nova medição,
+tudo em sequência.
 
-Em taxa baixa o processo fica ocioso entre requisições. O núcleo entra em
-estado de economia de energia e reduz frequência, e o despertar a partir do
-ocioso custa caro — a requisição seguinte paga a latência de transição de
-estado e de retomada de frequência. Em taxa alta o processo permanece quente e
-escalonado, e esse custo desaparece.
+A diferença entre os planos está no estado mínimo do processador, na tomada:
 
-Dean & Barroso (2013) listam o gerenciamento de energia entre as fontes de
-variabilidade de latência, exatamente neste sentido.
+| Plano | Estado mínimo do processador |
+|-------|------------------------------|
+| Equilibrado | **5%** |
+| Alto desempenho | **100%** |
 
-O mecanismo também explica o outlier da seção 8.2: a repetição de 18,4 ms de
-atraso médio a 250 TPS é compatível com uma janela em que o sistema manteve os
-núcleos em estado de baixo consumo por mais tempo.
+Cinco repetições de 15 s a 100 TPS em cada plano, contra `--echo-only`,
+idênticas às da calibração.
 
-#### Consequência para o desenho dos experimentos
+#### Resultado
 
-Se a inversão for confirmada, o piso de ruído do aparato **depende da taxa**, e
-depende dela na direção que prejudica a comparação: os níveis de carga baixa,
-que deveriam ser os mais limpos, são os mais contaminados na cauda. Comparar o
-p99 entre níveis sem tratar isso atribuiria ao sistema sob teste uma variação
-que é do aparato.
+| Plano | p99 serviço por repetição (µs) | mediana das repetições |
+|-------|-------------------------------|------------------------|
+| Equilibrado | 1108, 1145, **1294**, 6011, 7063 | 1294 µs |
+| Alto desempenho | 1171, 1416, **1465**, 4053, 9207 | 1465 µs |
 
-#### Teste de confirmação (pendente)
+**As faixas se sobrepõem quase inteiramente**, e o alto desempenho ficou
+nominalmente *pior*. As duas condições são bimodais da mesma forma: três
+repetições em torno de 1,2 ms e duas entre 4 e 9 ms. O plano de energia não
+explica a cauda.
 
-Plano de energia do Windows em desempenho máximo, rerodar apenas o nível de
-100 TPS, comparar o p99. Se cair, a hipótese está confirmada e o achado ganha
-mecanismo explicado em vez de ser um número estranho.
+#### O que o teste mostrou, além da refutação
 
-O mesmo controle precisa então ser aplicado a **todas** as rodadas do
-experimento, e o plano de energia vigente passa a ser item obrigatório do bloco
-de ambiente.
+Dois achados secundários, ambos relevantes.
+
+**1. A mediana melhora, de forma pequena e consistente.**
+
+| Plano | p50 serviço por repetição (µs) |
+|-------|-------------------------------|
+| Equilibrado | 249, 249, 249, 249, 250 |
+| Alto desempenho | 233, 234, 235, 237, 237 |
+
+Todas as cinco repetições do alto desempenho ficam abaixo de todas as cinco do
+equilibrado. A separação é perfeita, o que com n = 5 + 5 corresponde a um
+p exato bicaudal de 2/252 ≈ **0,008**. A magnitude é de cerca de 14 µs, ou
+5,6% da mediana.
+
+O efeito existe e é consistente com o mecanismo — o processador não precisa
+subir de frequência a cada requisição — mas é **pequeno demais para explicar
+uma variação de p99 de uma ordem de grandeza**.
+
+**2. O fenômeno investigado não reproduziu.**
+
+A linha de base de 28/09 no plano Equilibrado deu p99 de 1294 µs, contra 9063
+e 34.879 µs das varreduras de 22/09 na mesma configuração e no mesmo plano. A
+pior repetição de 28/09 foi 9207 µs, comparável ao 9063 da primeira varredura;
+os 34.879 µs da segunda não foram sequer aproximados.
+
+A conclusão é que **a cauda em carga baixa é estado episódico da máquina, não
+função sistemática da taxa nem do plano de energia.** O que muda entre sessões
+não foi identificado, e as candidatas — processos de fundo, estado térmico,
+atividade de disco — não foram isoladas.
+
+#### Consequências para o artigo
+
+1. A "inversão do p99" descrita antes como achado **não se sustenta como
+   fenômeno dependente da carga**. O que se sustenta é a variabilidade
+   episódica: o p99 do aparato em carga baixa varia de 1,1 ms a 34,9 ms entre
+   sessões, sem que a taxa explique a diferença.
+2. Essa variabilidade é, por si, um limite declarado do aparato e mais honesta
+   que a explicação anterior: **o p99 de uma rodada isolada não é reprodutível
+   entre sessões** e comparações de cauda exigem rodadas pareadas na mesma
+   sessão, como o teste acima.
+3. O plano de energia passa a ser item do bloco de ambiente por causa do efeito
+   na mediana, ainda que pequeno.
+4. O desenho pareado usado aqui é o procedimento a adotar sempre que duas
+   condições forem comparadas na cauda.
+
+> O resultado negativo fica registrado com o mesmo peso que teria um positivo.
+> Uma hipótese com mecanismo plausível, testada e refutada, é informação;
+> descartá-la em silêncio e manter a explicação bonita no texto não seria.
 
 ---
 
