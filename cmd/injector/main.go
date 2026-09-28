@@ -47,6 +47,7 @@ type opcoes struct {
 	warmup     time.Duration
 	conexoes   int
 	repeticao  int
+	sequencia  int
 	semente    int64
 	resultados string
 	sutConfig  string
@@ -63,6 +64,7 @@ func main() {
 	flag.DurationVar(&o.warmup, "warmup", 0, "periodo inicial descartado da analise")
 	flag.IntVar(&o.conexoes, "conns", 8, "conexoes persistentes mantidas com o autorizador")
 	flag.IntVar(&o.repeticao, "rep", 1, "numero da repeticao, usado no nome da pasta de saida")
+	flag.IntVar(&o.sequencia, "seq", 0, "posicao desta rodada na ordem de execucao do experimento; 0 quando avulsa")
 	flag.Int64Var(&o.semente, "seed", 1, "semente da ordem de consumo da massa")
 	flag.StringVar(&o.massa, "massa", filepath.Join("data", "massa.csv"), "CSV da massa sintetica de entrada")
 	flag.StringVar(&o.resultados, "results", "results", "raiz onde a pasta da rodada e criada")
@@ -126,6 +128,7 @@ func executar(o opcoes) error {
 			ChegadasTotais:     res.Chegadas,
 			Conexoes:           o.conexoes,
 			Repeticao:          o.repeticao,
+			Sequencia:          o.sequencia,
 			Semente:            o.semente,
 			MassaArquivo:       o.massa,
 			MassaTransacoes:    m.Tamanho(),

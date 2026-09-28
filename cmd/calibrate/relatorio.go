@@ -13,6 +13,12 @@ import (
 	"github.com/verofreitt/iso8583-volumetry-lab/internal/metrics"
 )
 
+// Execucao identifica uma rodada dentro do plano.
+type Execucao struct {
+	TPS       float64 `json:"tps"`
+	Repeticao int     `json:"repeticao"`
+}
+
 // Procedimento registra como a calibracao foi conduzida.
 type Procedimento struct {
 	Niveis      []float64 `json:"niveis_tps"`
@@ -22,8 +28,16 @@ type Procedimento struct {
 	Conexoes    int       `json:"conexoes"`
 	LimiarVazao float64   `json:"limiar_vazao_percentual"`
 	ModoAlvo    string    `json:"modo_do_alvo"`
-	Inicio      time.Time `json:"inicio"`
-	Fim         time.Time `json:"fim"`
+
+	// Embaralhada e a ordem sorteada tornam a varredura auditavel: sem elas
+	// nao ha como saber se um efeito atribuido ao nivel de carga nao era, na
+	// verdade, deriva da maquina ao longo da varredura.
+	Embaralhada  bool       `json:"ordem_embaralhada"`
+	SementeOrdem int64      `json:"semente_da_ordem"`
+	Repouso      string     `json:"repouso_entre_rodadas"`
+	Ordem        []Execucao `json:"ordem_de_execucao"`
+	Inicio       time.Time  `json:"inicio"`
+	Fim          time.Time  `json:"fim"`
 }
 
 // Repeticao e o extrato de uma rodada.

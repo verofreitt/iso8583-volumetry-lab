@@ -120,7 +120,15 @@ type Rodada struct {
 	ChegadasTotais     int       `json:"chegadas_totais"`
 	Conexoes           int       `json:"conexoes"`
 	Repeticao          int       `json:"repeticao"`
-	Semente            int64     `json:"semente"`
+
+	// Sequencia e a posicao desta rodada na ordem de execucao do experimento.
+	//
+	// Quando a ordem dos niveis de carga e sorteada, o nivel deixa de estar
+	// confundido com a posicao na varredura — mas so e possivel verificar isso
+	// depois se cada rodada souber onde ficou na sequencia. Zero indica rodada
+	// avulsa, fora de uma varredura.
+	Sequencia int   `json:"sequencia_na_execucao"`
+	Semente   int64 `json:"semente"`
 
 	// MassaArquivo e MassaTransacoes identificam a massa de entrada usada.
 	// Sem elas nao ha como afirmar que duas rodadas consumiram os mesmos

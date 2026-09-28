@@ -952,10 +952,10 @@ idênticas às da calibração.
 
 #### Resultado
 
-| Plano | p99 serviço por repetição (µs) | mediana das repetições |
-|-------|-------------------------------|------------------------|
-| Equilibrado | 1108, 1145, **1294**, 6011, 7063 | 1294 µs |
-| Alto desempenho | 1171, 1416, **1465**, 4053, 9207 | 1465 µs |
+| Plano | p99 serviço, em ordem de execução (µs) | mediana das repetições |
+|-------|---------------------------------------|------------------------|
+| Equilibrado | 7063, 1108, 1294, 1145, 6011 | 1294 µs |
+| Alto desempenho | 9207, 1416, 1465, 1171, 4053 | 1465 µs |
 
 **As faixas se sobrepõem quase inteiramente**, e o alto desempenho ficou
 nominalmente *pior*. As duas condições são bimodais da mesma forma: três
@@ -968,13 +968,13 @@ Dois achados secundários, ambos relevantes.
 
 **1. A mediana melhora, de forma pequena e consistente.**
 
-| Plano | p50 serviço por repetição (µs) |
-|-------|-------------------------------|
-| Equilibrado | 249, 249, 249, 249, 250 |
-| Alto desempenho | 233, 234, 235, 237, 237 |
+| Plano | p50 serviço, em ordem de execução (µs) |
+|-------|---------------------------------------|
+| Equilibrado | 249, 249, 249, 250, 249 |
+| Alto desempenho | 237, 237, 233, 235, 234 |
 
-Todas as cinco repetições do alto desempenho ficam abaixo de todas as cinco do
-equilibrado. A separação é perfeita, o que com n = 5 + 5 corresponde a um
+Todas as cinco repetições do alto desempenho, de 233 a 237 µs, ficam abaixo de
+todas as cinco do equilibrado, de 249 a 250 µs. A separação é perfeita, o que com n = 5 + 5 corresponde a um
 p exato bicaudal de 2/252 ≈ **0,008**. A magnitude é de cerca de 14 µs, ou
 5,6% da mediana.
 
@@ -1012,6 +1012,99 @@ atividade de disco — não foram isoladas.
 > O resultado negativo fica registrado com o mesmo peso que teria um positivo.
 > Uma hipótese com mecanismo plausível, testada e refutada, é informação;
 > descartá-la em silêncio e manter a explicação bonita no texto não seria.
+
+### 6.10 Efeito da ordem de execução: verificado e não encontrado
+
+As séries de p99 do teste de energia (seção 6.9) foram apresentadas em ordem
+crescente perfeita nas duas condições, o que levantou a suspeita de estado
+acumulando entre repetições. A suspeita foi investigada.
+
+#### A ordem crescente era artefato de apresentação
+
+O relatório ordenou os valores antes de exibi-los e os rotulou "por
+repetição", o que sugere ordem de execução. **Não era.** A ordem real,
+preservada no `calibracao.json`, é:
+
+| Condição | rep 1 | rep 2 | rep 3 | rep 4 | rep 5 |
+|----------|-------|-------|-------|-------|-------|
+| Equilibrado | 7063 | 1108 | 1294 | 1145 | 6011 |
+| Alto desempenho | 9207 | 1416 | 1465 | 1171 | 4053 |
+
+Em ambas a primeira repetição saiu a pior, o que com duas condições tem
+probabilidade aproximada de 0,04 sob independência — suspeito o bastante para
+investigar, longe de conclusivo.
+
+#### Teste formal sobre a calibração completa
+
+A varredura de 22/09 tem 8 níveis de carga por 5 repetições, em execução
+contínua. Tratando os níveis como blocos e o índice de repetição como
+tratamento:
+
+| Índice de repetição | 1 | 2 | 3 | 4 | 5 |
+|---------------------|---|---|---|---|---|
+| posto médio do p99 | 3,25 | 2,88 | 3,25 | 2,38 | 3,25 |
+
+Sob a hipótese nula o posto médio de cada índice seria 3,00.
+
+Estatística de Friedman **1,90** com 4 graus de liberdade, valor crítico a 5%
+de 9,488, **p = 0,754**. Correlação de Spearman entre índice de repetição e
+posto do p99: **−0,05**.
+
+Nenhum efeito de índice de repetição.
+
+#### Teste direto
+
+Dez repetições a 100 TPS numa única invocação, em ordem de execução:
+
+| rep | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|-----|---|---|---|---|---|---|---|---|---|-----|
+| p99 (µs) | 1314 | 6143 | **34.719** | 1251 | 1248 | 4735 | 1218 | 3711 | **24.447** | 4655 |
+| p50 (µs) | 235 | 238 | 238 | 238 | 234 | 234 | 235 | 242 | 259 | 232 |
+
+A primeira repetição está entre as **melhores**, não a pior. Os valores altos
+caem nas posições 3 e 9, espalhados. Não há partida a frio nem acumulação: a
+coincidência do teste de energia foi coincidência.
+
+A mediana permanece entre 232 e 259 µs ao longo das dez repetições, reforçando
+que só a cauda é episódica.
+
+#### O que a verificação encontrou de fato
+
+Um confundimento que os testes acima **não conseguem** detectar, porque está no
+desenho e não nos dados.
+
+Até aqui a varredura executava os níveis em ordem crescente, com as repetições
+de cada nível consecutivas: todas as de 100 TPS, depois todas as de 250, e
+assim por diante. Isso deixa **o nível de carga perfeitamente confundido com a
+posição na varredura**. Se o estado da máquina derivar ao longo dos treze
+minutos que a varredura leva, a deriva aparece como se fosse efeito do nível, e
+nenhuma análise dos dados separa as duas coisas.
+
+Dado que a dispersão entre sessões chega a uma ordem de grandeza (seção 6.9),
+a deriva dentro de uma sessão é plausível e o confundimento não é hipotético.
+
+#### Correções no procedimento
+
+| Medida | Estado |
+|--------|--------|
+| ordem das rodadas sorteada, quebrando o confundimento nível × posição | **implementada** |
+| ordem sorteada registrada no `calibracao.json`, posição de cada rodada no `summary.json` | **implementada** |
+| repouso fixo e declarado entre rodadas | **implementada** (`-rest`, padrão 3 s) |
+| reinício dos dois processos entre repetições | **já era feito** |
+
+O reinício já ocorria desde a primeira versão: cada rodada sobe um autorizador
+novo, executa um injetor novo e encerra o autorizador ao final. Nenhum estado
+de processo atravessa repetições; o que podia atravessar é estado de máquina, e
+é contra isso que o sorteio e o repouso agem.
+
+A ordem é sorteada com semente própria (`-order-seed`), de gerador explícito,
+e fica registrada — a varredura continua reproduzível.
+
+> As rodadas da seção 6.9 e as calibrações anteriores foram executadas **antes**
+> desta correção, em ordem sequencial. Os limites declarados na seção 6.7
+> permanecem válidos como ordem de grandeza, mas a atribuição de uma diferença
+> específica a um nível de carga, nelas, carrega o confundimento descrito acima.
+> Os experimentos finais usam a ordem sorteada.
 
 ---
 

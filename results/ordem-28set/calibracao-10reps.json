@@ -1,0 +1,190 @@
+{
+  "procedimento": {
+    "niveis_tps": [
+      100
+    ],
+    "repeticoes": 10,
+    "duracao": "15s",
+    "warmup": "5s",
+    "conexoes": 32,
+    "limiar_vazao_percentual": 99,
+    "modo_do_alvo": "--echo-only",
+    "inicio": "2026-09-28T10:31:01.3267203-03:00",
+    "fim": "2026-09-28T10:33:38.4703013-03:00"
+  },
+  "limites": {
+    "teto_injecao_tps": 100,
+    "piso_atraso_agendamento_us": 669,
+    "piso_servico_mediana_us": 238,
+    "ruido_p99_minimo_us": 4655,
+    "ruido_p99_mediana_us": 4655,
+    "ruido_p99_maximo_us": 4655,
+    "observacoes": [
+      "nenhum nivel saturou: o teto esta acima da faixa varrida e nao foi determinado",
+      "o piso de atraso e a granularidade do temporizador do sistema operacional, nao contencao do injetor: ele nao diminui em taxas baixas",
+      "o p99 foi medido contra --echo-only e nao cresce com a carga; a variacao entre niveis e ruido ambiente da maquina, nao enfileiramento",
+      "uma latencia de servico configurada abaixo do p99 maximo nao e distinguivel do aparato na cauda"
+    ]
+  },
+  "niveis": [
+    {
+      "tps": 100,
+      "repeticoes": [
+        {
+          "atraso_medio_us": 797,
+          "atraso_maximo_us": 32404,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 235,
+          "p99_servico_us": 1314,
+          "p99_9_servico_us": 2373,
+          "mediana_resposta_us": 859,
+          "p99_resposta_us": 2571,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 620,
+          "atraso_maximo_us": 8433,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 238,
+          "p99_servico_us": 6143,
+          "p99_9_servico_us": 14983,
+          "mediana_resposta_us": 858,
+          "p99_resposta_us": 7535,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 922,
+          "atraso_maximo_us": 37497,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 238,
+          "p99_servico_us": 34719,
+          "p99_9_servico_us": 57887,
+          "mediana_resposta_us": 867,
+          "p99_resposta_us": 45087,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 599,
+          "atraso_maximo_us": 7103,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 238,
+          "p99_servico_us": 1251,
+          "p99_9_servico_us": 2847,
+          "mediana_resposta_us": 846,
+          "p99_resposta_us": 2919,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 603,
+          "atraso_maximo_us": 3325,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 234,
+          "p99_servico_us": 1248,
+          "p99_9_servico_us": 2453,
+          "mediana_resposta_us": 857,
+          "p99_resposta_us": 2375,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 664,
+          "atraso_maximo_us": 31389,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 234,
+          "p99_servico_us": 4735,
+          "p99_9_servico_us": 7159,
+          "mediana_resposta_us": 853,
+          "p99_resposta_us": 6191,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 586,
+          "atraso_maximo_us": 4559,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 235,
+          "p99_servico_us": 1218,
+          "p99_9_servico_us": 3855,
+          "mediana_resposta_us": 850,
+          "p99_resposta_us": 2161,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 669,
+          "atraso_maximo_us": 29592,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 242,
+          "p99_servico_us": 3711,
+          "p99_9_servico_us": 13719,
+          "mediana_resposta_us": 861,
+          "p99_resposta_us": 6615,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 918,
+          "atraso_maximo_us": 34347,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 259,
+          "p99_servico_us": 24447,
+          "p99_9_servico_us": 63551,
+          "mediana_resposta_us": 904,
+          "p99_resposta_us": 30607,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 675,
+          "atraso_maximo_us": 34986,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 232,
+          "p99_servico_us": 4655,
+          "p99_9_servico_us": 8607,
+          "mediana_resposta_us": 852,
+          "p99_resposta_us": 6583,
+          "erros_transporte": 0,
+          "timeouts": 0
+        }
+      ],
+      "intervalo_entre_chegadas_us": 10000,
+      "atraso_medio_us": 669,
+      "atraso_maximo_us": 31389,
+      "percentual_do_alvo": 100,
+      "mediana_servico_us": 238,
+      "p99_servico_us": 4655,
+      "p99_9_servico_us": 8607,
+      "mediana_resposta_us": 858,
+      "p99_resposta_us": 6583,
+      "falhas": 0,
+      "repeticoes_com_falha": 0,
+      "sustentado": true
+    }
+  ],
+  "ambiente": {
+    "versao_go": "go1.25.3",
+    "num_cpu": 4,
+    "goos": "windows",
+    "goarch": "amd64",
+    "gogc_imposto": "nao imposto (herda o ambiente)",
+    "gomaxprocs_injetor": 0,
+    "gomaxprocs_autorizador": 0,
+    "relogio_fonte": "QueryPerformanceCounter",
+    "relogio_resolucao_ns": 100,
+    "linha_de_comando": "C:\\Users\\verof\\AppData\\Local\\go-build\\d8\\d8d49ee5f26c6897352802e707ee476f571eeaa89773ca01cde6426aca1c56f9-d\\calibrate.exe -levels 100 -reps 10 -duration 15s -warmup 5s -conns 32 -out C:/Users/verof/AppData/Local/Temp/claude/c--Users-verof-OneDrive-Documentos-TCC-iso8583-volumetry-lab/5f96aab6-c270-414d-a045-8a8d8eda1219/scratchpad/ordem"
+  }
+}

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"os/exec"
@@ -47,6 +48,10 @@ type opcoes struct {
 	gomaxprocsInjetor     int
 	gomaxprocsAutorizador int
 	gogc                  string
+
+	embaralhar   bool
+	sementeOrdem int64
+	repouso      time.Duration
 }
 
 func main() {
@@ -64,6 +69,9 @@ func main() {
 	flag.IntVar(&o.gomaxprocsInjetor, "gomaxprocs-injector", 0, "GOMAXPROCS do injetor; 0 mantem o padrao")
 	flag.IntVar(&o.gomaxprocsAutorizador, "gomaxprocs-authorizer", 0, "GOMAXPROCS do autorizador; 0 mantem o padrao")
 	flag.StringVar(&o.gogc, "gogc", "", "GOGC imposto aos dois processos; vazio mantem o padrao")
+	flag.BoolVar(&o.embaralhar, "shuffle", true, "sorteia a ordem de execucao das rodadas, em vez de varrer os niveis em sequencia")
+	flag.Int64Var(&o.sementeOrdem, "order-seed", 1, "semente do sorteio da ordem de execucao")
+	flag.DurationVar(&o.repouso, "rest", 3*time.Second, "repouso entre rodadas")
 	flag.Parse()
 
 	if err := executar(o); err != nil {
@@ -97,36 +105,65 @@ func executar(o opcoes) error {
 	log.Printf("calibracao: %d niveis, %d repeticoes, %v por rodada", len(niveis), o.repeticoes, o.duracao)
 	log.Printf("tempo estimado: %v", time.Duration(len(niveis)*o.repeticoes)*(o.duracao+3*time.Second))
 
+	plano := planejar(niveis, o.repeticoes, o.embaralhar, o.sementeOrdem)
+	if o.embaralhar {
+		log.Printf("ordem de execucao sorteada com a semente %d", o.sementeOrdem)
+	} else {
+		log.Printf("ordem de execucao sequencial")
+	}
+
+	// resultados indexados por (taxa, repeticao), porque a execucao pode nao
+	// seguir a ordem dos niveis
+	coletado := map[float64]map[int]Repeticao{}
+	for _, tps := range niveis {
+		coletado[tps] = map[int]Repeticao{}
+	}
+
+	for i, e := range plano {
+		log.Printf("execucao %d de %d: %g TPS, repeticao %d", i+1, len(plano), e.TPS, e.Repeticao)
+
+		resumo, err := rodada(binarios, o, pasta, e.TPS, e.Repeticao, i+1)
+		if err != nil {
+			return fmt.Errorf("execucao %d (%g TPS, repeticao %d): %w", i+1, e.TPS, e.Repeticao, err)
+		}
+		coletado[e.TPS][e.Repeticao] = resumir(resumo)
+
+		// repouso entre rodadas, para que uma nao herde o estado deixado pela
+		// anterior. E declarado e fixo: um intervalo variavel seria mais uma
+		// fonte de dispersao nao controlada.
+		if o.repouso > 0 && i < len(plano)-1 {
+			time.Sleep(o.repouso)
+		}
+	}
+
 	var medidos []Nivel
 	for _, tps := range niveis {
 		n := Nivel{TPS: tps}
 		for rep := 1; rep <= o.repeticoes; rep++ {
-			log.Printf("nivel %g TPS, repeticao %d de %d", tps, rep, o.repeticoes)
-
-			resumo, err := rodada(binarios, o, pasta, tps, rep)
-			if err != nil {
-				return fmt.Errorf("nivel %g TPS, repeticao %d: %w", tps, rep, err)
-			}
-			n.Repeticoes = append(n.Repeticoes, resumir(resumo))
+			n.Repeticoes = append(n.Repeticoes, coletado[tps][rep])
 		}
 		n.consolidar(o.limiarVazao)
 		medidos = append(medidos, n)
 
-		log.Printf("  atraso medio %d us (intervalo %d us), vazao %.1f%%, p99 servico %d us -> %s",
-			n.AtrasoMedioUS, n.IntervaloUS, n.PercentualDoAlvo, n.P99ServicoUS, situacao(n.Sustentado))
+		log.Printf("%g TPS: atraso medio %d us (intervalo %d us), vazao %.1f%%, p99 servico %d us -> %s",
+			n.TPS, n.AtrasoMedioUS, n.IntervaloUS, n.PercentualDoAlvo, n.P99ServicoUS, situacao(n.Sustentado))
 	}
 
 	rel := Relatorio{
 		Procedimento: Procedimento{
-			Niveis:      niveis,
-			Repeticoes:  o.repeticoes,
-			Duracao:     o.duracao.String(),
-			Warmup:      o.warmup.String(),
-			Conexoes:    o.conexoes,
-			LimiarVazao: o.limiarVazao,
-			Inicio:      inicio,
-			Fim:         time.Now(),
-			ModoAlvo:    "--echo-only",
+			Niveis:       niveis,
+			Repeticoes:   o.repeticoes,
+			Duracao:      o.duracao.String(),
+			Warmup:       o.warmup.String(),
+			Conexoes:     o.conexoes,
+			LimiarVazao:  o.limiarVazao,
+			Embaralhada:  o.embaralhar,
+			SementeOrdem: o.sementeOrdem,
+			Repouso:      o.repouso.String(),
+			Ordem:        plano,
+			Inicio:       inicio,
+			Fim:          time.Now(),
+			ModoAlvo:     "--echo-only",
 		},
 		Niveis:   medidos,
 		Ambiente: ambiente(o),
@@ -189,7 +226,7 @@ func compilar(pasta string) (caminhos, error) {
 
 // rodada sobe um autorizador em modo eco, executa o injetor contra ele e
 // devolve o resumo consolidado.
-func rodada(b caminhos, o opcoes, pasta string, tps float64, rep int) (metrics.Resumo, error) {
+func rodada(b caminhos, o opcoes, pasta string, tps float64, rep, sequencia int) (metrics.Resumo, error) {
 	configAutorizador := filepath.Join(pasta, "autorizador.json")
 
 	aut := exec.Command(b.autorizador, "--echo-only", "--quiet", "--config-out", configAutorizador)
@@ -214,6 +251,7 @@ func rodada(b caminhos, o opcoes, pasta string, tps float64, rep int) (metrics.R
 		"-warmup", o.warmup.String(),
 		"-conns", strconv.Itoa(o.conexoes),
 		"-rep", strconv.Itoa(rep),
+		"-seq", strconv.Itoa(sequencia),
 		"-results", rodadas,
 		"-sut-config", configAutorizador,
 	)
@@ -225,6 +263,34 @@ func rodada(b caminhos, o opcoes, pasta string, tps float64, rep int) (metrics.R
 	}
 
 	return ultimoResumo(rodadas)
+}
+
+// planejar monta a lista de rodadas e, opcionalmente, sorteia sua ordem.
+//
+// Varrer os niveis em sequencia — todas as repeticoes de 100 TPS, depois todas
+// as de 250, e assim por diante — deixa o nivel de carga perfeitamente
+// confundido com a posicao na varredura. Se o estado da maquina derivar ao
+// longo dos minutos que a varredura leva, a deriva aparece como se fosse
+// efeito do nivel, e nenhuma analise dos dados consegue separar as duas coisas.
+//
+// Sortear a ordem quebra o confundimento. A ordem sorteada fica registrada no
+// calibracao.json e a posicao de cada rodada vai para o summary.json dela.
+func planejar(niveis []float64, repeticoes int, embaralhar bool, semente int64) []Execucao {
+	plano := make([]Execucao, 0, len(niveis)*repeticoes)
+	for _, tps := range niveis {
+		for rep := 1; rep <= repeticoes; rep++ {
+			plano = append(plano, Execucao{TPS: tps, Repeticao: rep})
+		}
+	}
+
+	if embaralhar {
+		// fonte explicita, nunca as funcoes globais do math/rand, pelas razoes
+		// registradas em internal/massa
+		r := rand.New(rand.NewSource(semente))
+		r.Shuffle(len(plano), func(i, j int) { plano[i], plano[j] = plano[j], plano[i] })
+	}
+
+	return plano
 }
 
 // ambienteProcesso monta o ambiente de um processo filho, permitindo fixar

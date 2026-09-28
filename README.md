@@ -178,6 +178,7 @@ go run ./cmd/injector -tps 200 -duration 20s -warmup 5s -conns 16
 | `-conns` | `8` | conexões persistentes mantidas com o autorizador |
 | `-rep` | `1` | número da repetição, usado no nome da pasta de saída |
 | `-seed` | `1` | semente da ordem de consumo da massa |
+| `-seq` | `0` | posição na ordem de execução do experimento; 0 quando avulsa |
 | `-massa` | `data/massa.csv` | CSV da massa sintética de entrada |
 | `-results` | `results` | raiz onde a pasta da rodada é criada |
 | `-sut-config` | — | arquivo gravado pelo autorizador com `--config-out` |
@@ -273,6 +274,9 @@ go run ./cmd/calibrate
 | `-warmup` | `5s` | warm-up de cada rodada |
 | `-conns` | `32` | conexões do pool do injetor |
 | `-throughput-threshold` | `99` | percentual do alvo exigido para sustentar o nível |
+| `-shuffle` | `true` | sorteia a ordem de execução das rodadas |
+| `-order-seed` | `1` | semente do sorteio da ordem |
+| `-rest` | `3s` | repouso entre rodadas |
 | `-gomaxprocs-injector` | `0` | `GOMAXPROCS` do injetor; 0 mantém o padrão |
 | `-gomaxprocs-authorizer` | `0` | `GOMAXPROCS` do autorizador; 0 mantém o padrão |
 | `-gogc` | — | `GOGC` imposto aos dois processos |
@@ -282,6 +286,13 @@ O alvo é o autorizador em `--echo-only`, que responde imediatamente e sem
 sorteio: o que sobra de latência e de atraso é do aparato. Cada rodada usa
 processos novos, e os dois binários são compilados a partir do código corrente
 no início da varredura.
+
+**A ordem das rodadas é sorteada.** Varrer os níveis em sequência deixaria o
+nível de carga confundido com a posição na varredura: se o estado da máquina
+derivasse ao longo dos minutos que ela leva, a deriva apareceria como efeito do
+nível. A ordem sorteada vai para o `calibracao.json` e a posição de cada rodada
+para o `summary.json` dela, então a varredura continua reproduzível e
+auditável.
 
 A saída vai para `results/calibracao-<timestamp>/calibracao.json`, com o
 procedimento, os níveis, os limites apurados e o ambiente.
