@@ -1,0 +1,108 @@
+{
+  "rodada": {
+    "inicio": "2026-09-23T17:34:53.2634084-03:00",
+    "fim": "2026-09-23T17:35:13.3197404-03:00",
+    "tps_alvo": 200,
+    "duracao": "20s",
+    "warmup": "5s",
+    "chegadas_descartadas_warmup": 1000,
+    "chegadas_totais": 4000,
+    "conexoes": 16,
+    "repeticao": 1,
+    "semente": 42,
+    "massa_arquivo": "data\\massa.csv",
+    "massa_transacoes": 50000
+  },
+  "vazao": {
+    "alvo_tps": 200,
+    "alcancado_tps": 200,
+    "percentual_do_alvo": 100,
+    "janela_s": 15,
+    "chegadas_medidas": 3000,
+    "respondidas": 3000
+  },
+  "agendamento": {
+    "atraso_medio_us": 467,
+    "atraso_maximo_us": 8577,
+    "injetor_saturado": false
+  },
+  "latencia_servico": {
+    "amostras": 3000,
+    "media_us": 30679.957333333314,
+    "mediana_us": 26783,
+    "p95_us": 52703,
+    "p99_us": 80703,
+    "p99_9_us": 134399,
+    "minimo_us": 20640,
+    "maximo_us": 161791,
+    "desvio_padrao_us": 11932.568441406325
+  },
+  "latencia_resposta": {
+    "amostras": 3000,
+    "media_us": 31179.562666666683,
+    "mediana_us": 27247,
+    "p95_us": 53247,
+    "p99_us": 81343,
+    "p99_9_us": 134655,
+    "minimo_us": 20864,
+    "maximo_us": 162431,
+    "desvio_padrao_us": 11981.232172613669
+  },
+  "desfechos": {
+    "aprovadas": 2534,
+    "recusadas": 466,
+    "erros_transporte": 0,
+    "timeouts": 0,
+    "taxa_aprovacao": 0.8446666666666667,
+    "distribuicao_de39": {
+      "00": 2534,
+      "05": 130,
+      "14": 88,
+      "51": 204,
+      "91": 44
+    }
+  },
+  "ambiente": {
+    "versao_go": "go1.25.3",
+    "gomaxprocs": 4,
+    "num_cpu": 4,
+    "goos": "windows",
+    "goarch": "amd64",
+    "gogc": "100 (padrao, nao definido no ambiente)",
+    "relogio_fonte": "QueryPerformanceCounter",
+    "relogio_resolucao_ns": 100,
+    "linha_de_comando": "C:\\Users\\verof\\AppData\\Local\\Temp\\claude\\c--Users-verof-OneDrive-Documentos-TCC-iso8583-volumetry-lab\\5f96aab6-c270-414d-a045-8a8d8eda1219\\scratchpad\\injector.exe -tps 200 -duration 20s -warmup 5s -conns 16 -seed 42 -sut-config C:/Users/verof/AppData/Local/Temp/claude/c--Users-verof-OneDrive-Documentos-TCC-iso8583-volumetry-lab/5f96aab6-c270-414d-a045-8a8d8eda1219/scratchpad/aut5.json -results C:/Users/verof/AppData/Local/Temp/claude/c--Users-verof-OneDrive-Documentos-TCC-iso8583-volumetry-lab/5f96aab6-c270-414d-a045-8a8d8eda1219/scratchpad/m2",
+    "flags_injetor": {
+      "conns": "16",
+      "duration": "20s",
+      "massa": "data\\massa.csv",
+      "rep": "1",
+      "results": "C:/Users/verof/AppData/Local/Temp/claude/c--Users-verof-OneDrive-Documentos-TCC-iso8583-volumetry-lab/5f96aab6-c270-414d-a045-8a8d8eda1219/scratchpad/m2",
+      "seed": "42",
+      "sut-config": "C:/Users/verof/AppData/Local/Temp/claude/c--Users-verof-OneDrive-Documentos-TCC-iso8583-volumetry-lab/5f96aab6-c270-414d-a045-8a8d8eda1219/scratchpad/aut5.json",
+      "tps": "200",
+      "warmup": "5s"
+    },
+    "config_autorizador": {
+      "config": {
+        "latency-dist": "lognormal",
+        "approval-rate": 0.85,
+        "decline-dist": "51:40,05:30,14:20,91:10",
+        "max-conns": 0,
+        "seed": 42,
+        "echo-only": false,
+        "latency-base": "20ms",
+        "latency-jitter": "10ms"
+      },
+      "ambiente": {
+        "versao_go": "go1.25.3",
+        "gomaxprocs": 4,
+        "num_cpu": 4,
+        "goos": "windows",
+        "goarch": "amd64",
+        "gogc": "100 (padrao, nao definido no ambiente)",
+        "linha_de_comando": "C:\\Users\\verof\\AppData\\Local\\Temp\\claude\\c--Users-verof-OneDrive-Documentos-TCC-iso8583-volumetry-lab\\5f96aab6-c270-414d-a045-8a8d8eda1219\\scratchpad\\authorizer.exe -latency-base 20ms -latency-jitter 10ms -latency-dist lognormal -approval-rate 0.85 -seed 42 -quiet -config-out C:/Users/verof/AppData/Local/Temp/claude/c--Users-verof-OneDrive-Documentos-TCC-iso8583-volumetry-lab/5f96aab6-c270-414d-a045-8a8d8eda1219/scratchpad/aut5.json"
+      }
+    }
+  }
+}

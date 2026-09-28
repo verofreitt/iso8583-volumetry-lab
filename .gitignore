@@ -1,0 +1,29 @@
+# Binários compilados
+*.exe
+/authorizer
+/injector
+/calibrate
+
+# Saída bruta dos experimentos.
+#
+# Um raw.csv de 500 TPS por 5 min tem cerca de 20 MB, e a calibração de
+# 22/09/2026 sozinha produziu 79 MB em 40 rodadas. Versionar tudo inviabiliza o
+# repositório sem acrescentar evidência: o summary.json de cada rodada traz o
+# resumo consolidado e o bloco de ambiente completo, que é o que sustenta a
+# análise do artigo.
+#
+# Os summary.json e os calibracao.json são versionados sempre, e results/exemplo/
+# guarda um raw.csv completo para que a estrutura do arquivo bruto seja
+# auditável por terceiros.
+results/**/raw.csv
+!results/exemplo/raw.csv
+
+# Binários deixados pelo cmd/calibrate na pasta da rodada
+results/**/authorizer
+results/**/authorizer.exe
+results/**/injector
+results/**/injector.exe
+
+# Configuração do autorizador gravada durante a calibração; o mesmo conteúdo
+# já fica embutido no summary.json de cada rodada
+results/**/autorizador.json
