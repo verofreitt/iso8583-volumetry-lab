@@ -385,46 +385,42 @@ em 100% do alvo em todos os níveis, sem uma falha de transporte.
 ### A latência de resposta revela o que a de serviço esconde
 
 A latência de serviço é praticamente idêntica nos quatro níveis — o alvo não
-degradou. Mas a 1000 TPS o p99 observado pelo cliente é **138 ms**, contra
-83 ms de serviço:
+degradou. A de resposta depende criticamente da utilização do pool, e o
+experimento foi executado em duas sessões que caíram em regimes diferentes:
 
-| Alvo | p99 resposta − serviço | Atraso de agendamento |
-|------|------------------------|----------------------|
-| 100 TPS | 0,6 ms | 0,45 ms |
-| 500 TPS | 2,0 ms | 0,76 ms |
-| **1000 TPS** | **55,1 ms** | 0,77 ms |
+| Sessão | Média de serviço | Utilização a 1000 TPS | p99 resposta − serviço |
+|--------|------------------|----------------------|------------------------|
+| 28/09 | 31,20 ms | **97,5%** | **55,1 ms** |
+| 29/09 | 30,36 ms | **94,9%** | **1,1 ms** |
 
-Os 55 ms não são atraso do injetor — o agendamento permaneceu em 0,77 ms. É
-**fila no pool de conexões**, e o modelo confirma quantitativamente.
+Uma diferença de 0,84 ms na média de serviço — 2,7%, dentro da variação entre
+sessões — moveu a utilização em 2,6 pontos e o enfileiramento colapsou de 55 ms
+para 1 ms.
 
-A utilização se calcula com o tempo **médio** de serviço, não com a mediana. A
-distribuição do alvo foi configurada, então a média é analítica: base de 20 ms
-mais lognormal de média 10 ms dá **30,0 ms**, contra 26,1 ms de mediana. A média
-empírica medida foi 31,2 ms.
+A utilização se calcula com o tempo **médio**, não com a mediana. A distribuição
+do alvo foi configurada, então a média é analítica: 20 ms de base mais lognormal
+de média 10 ms dá **30,0 ms**, contra 26,1 ms de mediana.
 
-| E[S] | Capacidade | Utilização | p99 de espera previsto |
-|------|-----------|-----------|------------------------|
-| 27,0 ms (mediana) | 1185 TPS | 84,4% | 17,7 ms |
-| **30,0 ms (média analítica)** | **1067 TPS** | **93,8%** | **62,2 ms** |
-| 31,2 ms (média empírica) | 1026 TPS | 97,5% | 172,8 ms |
+**O que fica estabelecido:** entre 94,9% e 97,5% de utilização, o p99 observado
+pelo cliente passa de indistinguível da latência de serviço para 67% pior que
+ela. A transição é abrupta.
 
-**Observado: 55,1 ms.** Com a média, o modelo acerta dentro de 13%; com a
-mediana, erra por um fator de três. A utilização real a 1000 TPS é de **94% a
-98%** — o sistema estava à beira da saturação, não confortável.
+> **M/M/c não modela este sistema.** Na utilização de cada sessão o modelo prevê
+> 78,4 ms (observado 1,1) e 172,8 ms (observado 55,1) — superestimação de uma a
+> duas ordens de grandeza. Esperado: o serviço tem CV de 0,44 e as chegadas são
+> quase determinísticas, e ambas empurram o joelho para perto de ρ = 1. Serve
+> como limite superior grosseiro, não como modelo. Calculado por
+> [`analysis/fila`](analysis/fila).
 
-> **Ressalva.** M/M/c pressupõe serviço exponencial (CV = 1) e chegadas de
-> Poisson. Aqui o serviço tem CV = 0,44 e as chegadas são quase
-> determinísticas; as duas diferenças reduzem a fila, e o modelo superestima. A
-> concordância vale como verificação de ordem de grandeza do mecanismo, não
-> como ajuste de modelo. Calculado por [`analysis/fila`](analysis/fila).
+Em ambas as sessões o autorizador está saudável. **Uma medição que reportasse
+apenas latência de serviço declararia o gargalo inexistente nas duas.**
 
-É o gargalo que uma medição só de latência de serviço reportaria como
-inexistente. Daí a regra de dimensionamento, com o tempo **médio**:
+Regra de dimensionamento, com o tempo **médio**:
 
 > conexões ≥ TPS × E[S] ÷ utilização alvo
 
-Para 1000 TPS, E[S] de 31,2 ms e utilização alvo de 50%: **63 conexões**, não
-as 32 usadas.
+Para 1000 TPS, E[S] de 31 ms e utilização alvo de 50%: **62 conexões**, não as
+32 usadas.
 
 ### Limitações declaradas
 
@@ -432,21 +428,21 @@ as 32 usadas.
 a 1000 TPS. Seu p99 não é comparável ao dos demais níveis e seu p99,9 não é
 estimável.
 
-**As repetições não são réplicas independentes para desfecho de negócio.** Com
-as sementes fixas, as cinco repetições de um nível consomem as mesmas
-transações e recebem as mesmas decisões — são réplicas apenas para latência.
-Corrigido depois dos experimentos com `-vary-seed`, que soma o número da
-repetição à semente de consumo.
+**Repetições precisam de sementes independentes.** Com as sementes fixas, as
+cinco repetições de um nível consomem as mesmas transações e recebem as mesmas
+decisões — são réplicas apenas para latência. O experimento foi **reexecutado**
+com `-vary-seed`, e os resultados de desfecho do artigo vêm dessa segunda
+execução.
 
-**Significância não basta como critério de detecção.** A 1000 TPS o teste de
-independência dá p = 0,048 num alvo *sem viés* — mas a diferença entre as taxas
-é de 8%, contra 189% no controle positivo. Com N crescendo junto com a carga, o
-teste passa a acusar o irrelevante.
+**O falso positivo era artefato da pseudorreplicação.** Com sementes fixas, o
+teste a 1000 TPS dava p = 0,048 num alvo sem viés, repetido idêntico nas cinco
+repetições — aparência de achado sistemático. Com réplicas independentes,
+**zero de cinco rejeitam**, com p entre 0,17 e 0,99.
 
-O critério adotado exige as duas condições: **p < 0,05 E diferença relativa
-acima de 50%**. O limiar fica na lacuna entre o ruído medido (8%) e o sinal
-verdadeiro (189%). Pelo critério revisado, o resultado a 1000 TPS **não é
-detecção**.
+**Significância não basta como critério de detecção.** O ruído a N = 90.000 fica
+entre 2% e 8% de diferença relativa; o sinal verdadeiro do controle positivo é
+de 189%. O critério adotado exige **p < 0,05 E diferença relativa acima de
+50%**, na lacuna entre os dois.
 
 ## Limites conhecidos do aparato
 

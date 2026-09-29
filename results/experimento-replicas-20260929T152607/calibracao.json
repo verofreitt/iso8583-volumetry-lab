@@ -1,0 +1,455 @@
+{
+  "procedimento": {
+    "niveis_tps": [
+      10,
+      100,
+      500,
+      1000
+    ],
+    "repeticoes": 5,
+    "duracao": "2m0s",
+    "warmup": "30s",
+    "conexoes": 32,
+    "limiar_vazao_percentual": 99,
+    "modo_do_alvo": "--latency-base 20ms --latency-jitter 10ms --latency-dist lognormal --approval-rate 0.85 --decline-dist 51:40,05:30,14:20,91:10 --seed 42",
+    "ordem_embaralhada": true,
+    "semente_da_ordem": 7,
+    "repouso_entre_rodadas": "5s",
+    "ordem_de_execucao": [
+      {
+        "tps": 100,
+        "repeticao": 5
+      },
+      {
+        "tps": 500,
+        "repeticao": 1
+      },
+      {
+        "tps": 100,
+        "repeticao": 4
+      },
+      {
+        "tps": 500,
+        "repeticao": 5
+      },
+      {
+        "tps": 100,
+        "repeticao": 2
+      },
+      {
+        "tps": 1000,
+        "repeticao": 2
+      },
+      {
+        "tps": 100,
+        "repeticao": 1
+      },
+      {
+        "tps": 10,
+        "repeticao": 2
+      },
+      {
+        "tps": 10,
+        "repeticao": 4
+      },
+      {
+        "tps": 500,
+        "repeticao": 3
+      },
+      {
+        "tps": 100,
+        "repeticao": 3
+      },
+      {
+        "tps": 10,
+        "repeticao": 1
+      },
+      {
+        "tps": 500,
+        "repeticao": 4
+      },
+      {
+        "tps": 1000,
+        "repeticao": 3
+      },
+      {
+        "tps": 10,
+        "repeticao": 3
+      },
+      {
+        "tps": 500,
+        "repeticao": 2
+      },
+      {
+        "tps": 1000,
+        "repeticao": 1
+      },
+      {
+        "tps": 1000,
+        "repeticao": 5
+      },
+      {
+        "tps": 10,
+        "repeticao": 5
+      },
+      {
+        "tps": 1000,
+        "repeticao": 4
+      }
+    ],
+    "inicio": "2026-09-29T15:26:07.2304212-03:00",
+    "fim": "2026-09-29T16:07:55.2403256-03:00"
+  },
+  "calibracao": false,
+  "limites": {
+    "teto_injecao_tps": 0,
+    "piso_atraso_agendamento_us": 0,
+    "piso_servico_mediana_us": 0,
+    "ruido_p99_minimo_us": 0,
+    "ruido_p99_mediana_us": 0,
+    "ruido_p99_maximo_us": 0,
+    "observacoes": null
+  },
+  "niveis": [
+    {
+      "tps": 10,
+      "repeticoes": [
+        {
+          "atraso_medio_us": 500,
+          "atraso_maximo_us": 16326,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26367,
+          "p99_servico_us": 85247,
+          "p99_9_servico_us": 162943,
+          "mediana_resposta_us": 26895,
+          "p99_resposta_us": 86207,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 457,
+          "atraso_maximo_us": 1146,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 25903,
+          "p99_servico_us": 85055,
+          "p99_9_servico_us": 161535,
+          "mediana_resposta_us": 26415,
+          "p99_resposta_us": 85503,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 489,
+          "atraso_maximo_us": 16439,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26015,
+          "p99_servico_us": 85183,
+          "p99_9_servico_us": 161791,
+          "mediana_resposta_us": 26511,
+          "p99_resposta_us": 85631,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 482,
+          "atraso_maximo_us": 14932,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 25983,
+          "p99_servico_us": 84863,
+          "p99_9_servico_us": 162047,
+          "mediana_resposta_us": 26479,
+          "p99_resposta_us": 85311,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 461,
+          "atraso_maximo_us": 3279,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 25903,
+          "p99_servico_us": 85055,
+          "p99_9_servico_us": 161919,
+          "mediana_resposta_us": 26447,
+          "p99_resposta_us": 85695,
+          "erros_transporte": 0,
+          "timeouts": 0
+        }
+      ],
+      "intervalo_entre_chegadas_us": 100000,
+      "atraso_medio_us": 482,
+      "atraso_maximo_us": 14932,
+      "percentual_do_alvo": 100,
+      "mediana_servico_us": 25983,
+      "p99_servico_us": 85055,
+      "p99_9_servico_us": 161919,
+      "mediana_resposta_us": 26479,
+      "p99_resposta_us": 85631,
+      "falhas": 0,
+      "repeticoes_com_falha": 0,
+      "sustentado": true
+    },
+    {
+      "tps": 100,
+      "repeticoes": [
+        {
+          "atraso_medio_us": 417,
+          "atraso_maximo_us": 14002,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26623,
+          "p99_servico_us": 81151,
+          "p99_9_servico_us": 132223,
+          "mediana_resposta_us": 27023,
+          "p99_resposta_us": 81791,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 407,
+          "atraso_maximo_us": 9633,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26607,
+          "p99_servico_us": 80511,
+          "p99_9_servico_us": 132607,
+          "mediana_resposta_us": 27039,
+          "p99_resposta_us": 81023,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 453,
+          "atraso_maximo_us": 31849,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26623,
+          "p99_servico_us": 80831,
+          "p99_9_servico_us": 132095,
+          "mediana_resposta_us": 27055,
+          "p99_resposta_us": 81855,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 1398,
+          "atraso_maximo_us": 40522,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 30079,
+          "p99_servico_us": 87487,
+          "p99_9_servico_us": 136063,
+          "mediana_resposta_us": 31375,
+          "p99_resposta_us": 91263,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 1456,
+          "atraso_maximo_us": 197964,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 27119,
+          "p99_servico_us": 82879,
+          "p99_9_servico_us": 133887,
+          "mediana_resposta_us": 27695,
+          "p99_resposta_us": 83775,
+          "erros_transporte": 0,
+          "timeouts": 0
+        }
+      ],
+      "intervalo_entre_chegadas_us": 10000,
+      "atraso_medio_us": 453,
+      "atraso_maximo_us": 31849,
+      "percentual_do_alvo": 100,
+      "mediana_servico_us": 26623,
+      "p99_servico_us": 81151,
+      "p99_9_servico_us": 132607,
+      "mediana_resposta_us": 27055,
+      "p99_resposta_us": 81855,
+      "falhas": 0,
+      "repeticoes_com_falha": 0,
+      "sustentado": true
+    },
+    {
+      "tps": 500,
+      "repeticoes": [
+        {
+          "atraso_medio_us": 500,
+          "atraso_maximo_us": 30406,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26751,
+          "p99_servico_us": 83391,
+          "p99_9_servico_us": 147967,
+          "mediana_resposta_us": 27215,
+          "p99_resposta_us": 84095,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 365,
+          "atraso_maximo_us": 9538,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26511,
+          "p99_servico_us": 81919,
+          "p99_9_servico_us": 147199,
+          "mediana_resposta_us": 26879,
+          "p99_resposta_us": 82431,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 364,
+          "atraso_maximo_us": 6881,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26511,
+          "p99_servico_us": 81855,
+          "p99_9_servico_us": 147455,
+          "mediana_resposta_us": 26879,
+          "p99_resposta_us": 82239,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 539,
+          "atraso_maximo_us": 63080,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26559,
+          "p99_servico_us": 83647,
+          "p99_9_servico_us": 147199,
+          "mediana_resposta_us": 26959,
+          "p99_resposta_us": 85951,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 416,
+          "atraso_maximo_us": 24456,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26527,
+          "p99_servico_us": 82943,
+          "p99_9_servico_us": 147455,
+          "mediana_resposta_us": 26927,
+          "p99_resposta_us": 83775,
+          "erros_transporte": 0,
+          "timeouts": 0
+        }
+      ],
+      "intervalo_entre_chegadas_us": 2000,
+      "atraso_medio_us": 416,
+      "atraso_maximo_us": 24456,
+      "percentual_do_alvo": 100,
+      "mediana_servico_us": 26527,
+      "p99_servico_us": 82943,
+      "p99_9_servico_us": 147455,
+      "mediana_resposta_us": 26927,
+      "p99_resposta_us": 83775,
+      "falhas": 0,
+      "repeticoes_com_falha": 0,
+      "sustentado": true
+    },
+    {
+      "tps": 1000,
+      "repeticoes": [
+        {
+          "atraso_medio_us": 353,
+          "atraso_maximo_us": 33261,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26479,
+          "p99_servico_us": 81215,
+          "p99_9_servico_us": 151807,
+          "mediana_resposta_us": 27695,
+          "p99_resposta_us": 82175,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 508,
+          "atraso_maximo_us": 118077,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26927,
+          "p99_servico_us": 84159,
+          "p99_9_servico_us": 168191,
+          "mediana_resposta_us": 30239,
+          "p99_resposta_us": 362751,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 335,
+          "atraso_maximo_us": 7681,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26495,
+          "p99_servico_us": 81151,
+          "p99_9_servico_us": 151807,
+          "mediana_resposta_us": 27711,
+          "p99_resposta_us": 82111,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 341,
+          "atraso_maximo_us": 29523,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26495,
+          "p99_servico_us": 81151,
+          "p99_9_servico_us": 151679,
+          "mediana_resposta_us": 27695,
+          "p99_resposta_us": 82239,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 628,
+          "atraso_maximo_us": 93699,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 27423,
+          "p99_servico_us": 86527,
+          "p99_9_servico_us": 159615,
+          "mediana_resposta_us": 31199,
+          "p99_resposta_us": 792575,
+          "erros_transporte": 0,
+          "timeouts": 0
+        }
+      ],
+      "intervalo_entre_chegadas_us": 1000,
+      "atraso_medio_us": 353,
+      "atraso_maximo_us": 33261,
+      "percentual_do_alvo": 100,
+      "mediana_servico_us": 26495,
+      "p99_servico_us": 81215,
+      "p99_9_servico_us": 151807,
+      "mediana_resposta_us": 27711,
+      "p99_resposta_us": 82239,
+      "falhas": 0,
+      "repeticoes_com_falha": 0,
+      "sustentado": true
+    }
+  ],
+  "ambiente": {
+    "versao_go": "go1.25.3",
+    "num_cpu": 4,
+    "goos": "windows",
+    "goarch": "amd64",
+    "gogc_imposto": "nao imposto (herda o ambiente)",
+    "gomaxprocs_injetor": 0,
+    "gomaxprocs_autorizador": 0,
+    "relogio_fonte": "QueryPerformanceCounter",
+    "relogio_resolucao_ns": 100,
+    "linha_de_comando": "C:\\Users\\verof\\AppData\\Local\\Temp\\claude\\c--Users-verof-OneDrive-Documentos-TCC-iso8583-volumetry-lab\\5f96aab6-c270-414d-a045-8a8d8eda1219\\scratchpad\\calibrate.exe -levels 10,100,500,1000 -reps 5 -duration 2m -warmup 30s -conns 32 -shuffle -order-seed 7 -rest 5s -massa-seed 42 -vary-seed -nome experimento-replicas -out results -sut-args --latency-base 20ms --latency-jitter 10ms --latency-dist lognormal --approval-rate 0.85 --decline-dist 51:40,05:30,14:20,91:10 --seed 42"
+  }
+}

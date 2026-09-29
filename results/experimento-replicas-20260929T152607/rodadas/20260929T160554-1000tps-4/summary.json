@@ -1,0 +1,115 @@
+{
+  "rodada": {
+    "inicio": "2026-09-29T16:05:54.9004724-03:00",
+    "fim": "2026-09-29T16:07:54.9415504-03:00",
+    "tps_alvo": 1000,
+    "duracao": "2m0s",
+    "warmup": "30s",
+    "chegadas_descartadas_warmup": 30000,
+    "chegadas_totais": 120000,
+    "conexoes": 32,
+    "repeticao": 4,
+    "ordem_embaralhada": true,
+    "semente_da_ordem": 7,
+    "sequencia_na_execucao": 20,
+    "semente": 46,
+    "massa_arquivo": "data\\massa.csv",
+    "massa_transacoes": 50000
+  },
+  "vazao": {
+    "alvo_tps": 1000,
+    "alcancado_tps": 1000,
+    "percentual_do_alvo": 100,
+    "janela_s": 90,
+    "chegadas_medidas": 90000,
+    "respondidas": 90000
+  },
+  "agendamento": {
+    "atraso_medio_us": 341,
+    "atraso_maximo_us": 29523,
+    "injetor_saturado": false
+  },
+  "latencia_servico": {
+    "amostras": 90000,
+    "media_us": 30358.274133333332,
+    "mediana_us": 26495,
+    "p95_us": 51583,
+    "p99_us": 81151,
+    "p99_9_us": 151679,
+    "minimo_us": 20064,
+    "maximo_us": 459263,
+    "desvio_padrao_us": 12849.41966085826
+  },
+  "latencia_resposta": {
+    "amostras": 90000,
+    "media_us": 31393.0967111111,
+    "mediana_us": 27695,
+    "p95_us": 52703,
+    "p99_us": 82239,
+    "p99_9_us": 152063,
+    "minimo_us": 20384,
+    "maximo_us": 463359,
+    "desvio_padrao_us": 12915.786367280341
+  },
+  "desfechos": {
+    "aprovadas": 76398,
+    "recusadas": 13602,
+    "erros_transporte": 0,
+    "timeouts": 0,
+    "taxa_aprovacao": 0.8488666666666667,
+    "distribuicao_de39": {
+      "00": 76398,
+      "05": 4154,
+      "14": 2669,
+      "51": 5395,
+      "91": 1384
+    }
+  },
+  "ambiente": {
+    "versao_go": "go1.25.3",
+    "gomaxprocs": 4,
+    "num_cpu": 4,
+    "goos": "windows",
+    "goarch": "amd64",
+    "gogc": "100 (padrao, nao definido no ambiente)",
+    "relogio_fonte": "QueryPerformanceCounter",
+    "relogio_resolucao_ns": 100,
+    "linha_de_comando": "results\\experimento-replicas-20260929T152607\\injector.exe -tps 1000 -duration 2m0s -warmup 30s -conns 32 -rep 4 -seed 46 -seq 20 -shuffle=true -order-seed 7 -results results\\experimento-replicas-20260929T152607\\rodadas -sut-config results\\experimento-replicas-20260929T152607\\autorizador.json",
+    "flags_injetor": {
+      "conns": "32",
+      "duration": "2m0s",
+      "massa": "data\\massa.csv",
+      "order-seed": "7",
+      "rep": "4",
+      "results": "results\\experimento-replicas-20260929T152607\\rodadas",
+      "seed": "46",
+      "seq": "20",
+      "shuffle": "true",
+      "sut-config": "results\\experimento-replicas-20260929T152607\\autorizador.json",
+      "tps": "1000",
+      "warmup": "30s"
+    },
+    "config_autorizador": {
+      "config": {
+        "latency-dist": "lognormal",
+        "approval-rate": 0.85,
+        "decline-dist": "51:40,05:30,14:20,91:10",
+        "decline-bias": "",
+        "max-conns": 0,
+        "seed": 42,
+        "echo-only": false,
+        "latency-base": "20ms",
+        "latency-jitter": "10ms"
+      },
+      "ambiente": {
+        "versao_go": "go1.25.3",
+        "gomaxprocs": 4,
+        "num_cpu": 4,
+        "goos": "windows",
+        "goarch": "amd64",
+        "gogc": "100 (padrao, nao definido no ambiente)",
+        "linha_de_comando": "results\\experimento-replicas-20260929T152607\\authorizer.exe --latency-base 20ms --latency-jitter 10ms --latency-dist lognormal --approval-rate 0.85 --decline-dist 51:40,05:30,14:20,91:10 --seed 42 --quiet --config-out results\\experimento-replicas-20260929T152607\\autorizador.json"
+      }
+    }
+  }
+}

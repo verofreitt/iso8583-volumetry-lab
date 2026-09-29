@@ -3,7 +3,8 @@
 Documento de registro do aparato. Cada decisão que afeta a interpretação dos
 números medidos é registrada aqui, com a justificativa.
 
-Estado atual: **experimentos finais executados** (seção 10), sobre aparato
+Estado atual: **experimentos finais executados e reexecutados com réplicas
+independentes** (seção 10), sobre aparato
 calibrado sob ordem sorteada (seção 6.11) e com capacidade de detecção validada
 por controle negativo e positivo (seção 9). **Os limites do aparato reportados no artigo são os da seção 6.11**, da segunda
 calibração; os da seção 6.7 ficam como histórico. As decisões revistas durante
@@ -1607,6 +1608,7 @@ desempenho. Registro em
 | duração | 2 min, com 30 s de warm-up descartado |
 | conexões | 32 |
 | ordem | sorteada, semente 7 |
+| sementes de massa | independentes por repetição (`--vary-seed`) |
 | repouso entre rodadas | 5 s |
 | alvo | latência base 20 ms, jitter lognormal de média 10 ms |
 | taxa de aprovação | 0,85, recusas em `51:40,05:30,14:20,91:10` |
@@ -1651,102 +1653,116 @@ transporte.
 ### 10.4 O achado principal: a latência de resposta revela o que a de serviço esconde
 
 A latência de **serviço** é praticamente idêntica nos quatro níveis — o alvo não
-degradou. A de **resposta**, que parte do instante de chegada pretendido, conta
-outra história:
+degradou em nenhuma das duas sessões. A de **resposta**, que parte do instante
+de chegada pretendido, depende criticamente da utilização do pool.
 
-| Alvo | p50 resposta − serviço | p99 resposta − serviço | Atraso de agendamento |
-|------|------------------------|------------------------|----------------------|
-| 10 TPS | 0,9 ms | 19,3 ms | 2,34 ms |
-| 100 TPS | 0,5 ms | 0,6 ms | 0,45 ms |
-| 500 TPS | 0,6 ms | 2,0 ms | 0,76 ms |
-| **1000 TPS** | **4,9 ms** | **55,1 ms** | 0,77 ms |
+#### Duas sessões, dois regimes
 
-A 1000 TPS o p99 observado pelo cliente é **138 ms**, contra 83 ms de serviço. A
-diferença de 55 ms **não é atraso do injetor**: o atraso de agendamento
-permaneceu em 0,77 ms, igual ao dos demais níveis.
+O experimento foi executado duas vezes: em 28/09 com semente de massa fixa, e
+em 29/09 com sementes independentes por repetição (a correção da seção 10.6).
+As duas sessões diferem em algo que não foi manipulado — o tempo médio de
+serviço realizado:
+
+| Alvo | Média de serviço 28/09 | Utilização | p99 resp − serv | Média 29/09 | Utilização | p99 resp − serv |
+|------|------------------------|-----------|-----------------|-------------|-----------|-----------------|
+| 100 TPS | 30,55 ms | 9,5% | 0,6 ms | 30,51 ms | 9,5% | 0,9 ms |
+| 500 TPS | 31,27 ms | 48,9% | 2,0 ms | 30,54 ms | 47,7% | 0,7 ms |
+| **1000 TPS** | **31,20 ms** | **97,5%** | **55,1 ms** | **30,36 ms** | **94,9%** | **1,1 ms** |
+
+Uma diferença de **0,84 ms na média de serviço, 2,7%**, moveu a utilização de
+97,5% para 94,9% — e o enfileiramento colapsou de 55 ms para 1 ms.
+
+O tempo de serviço configurado é o mesmo nas duas sessões; o que variou foi o
+sobrecusto realizado, tempo de ida e volta somado ao excesso do `time.Sleep`,
+que responde ao estado da máquina como a seção 6.9 documenta.
 
 #### O tempo médio de serviço é analítico, não estimado
 
-A utilização de um sistema de filas é a razão entre a taxa de chegada e a taxa
-de serviço, e a taxa de serviço se calcula com o tempo **médio**, não com a
-mediana. A distribuição do alvo foi configurada, então a média é obtida dos
-parâmetros:
+A utilização é a razão entre a taxa de chegada e a taxa de serviço, e a taxa de
+serviço se calcula com o tempo **médio**, não com a mediana. A distribuição do
+alvo foi configurada, então a média sai dos parâmetros:
 
 | Grandeza | Valor |
 |----------|-------|
 | base | 20,000 ms |
-| jitter: μ = ln 10 − ½, σ = 1 | |
-| **média** da lognormal = exp(μ + σ²/2) | **10,000 ms** (por construção) |
+| **média** da lognormal = exp(μ + σ²/2), com μ = ln 10 − ½ e σ = 1 | **10,000 ms** (por construção) |
 | mediana da lognormal = exp(μ) | 6,065 ms |
 | **média analítica de serviço** | **30,000 ms** |
 | mediana analítica de serviço | 26,065 ms |
 
-A média empírica medida foi de **31,2 ms** a 1000 TPS. O excesso de 1,2 ms sobre
-a analítica é o tempo de ida e volta em loopback somado ao excesso do
-`time.Sleep` caracterizado na seção 4.4.
+> **Correção.** Uma versão anterior calculou a capacidade com 27 ms, que é o p50
+> medido e não a média. O erro subestimava a utilização de 97,5% para 84,4%.
 
-> **Correção.** Uma versão anterior deste documento calculou a capacidade com
-> 27 ms, que é o p50 medido e não a média. O erro subestimava a utilização de
-> forma grave e é corrigido abaixo.
+#### O modelo M/M/c não descreve este sistema
 
-#### Utilização corrigida e confronto com o modelo
+Confrontando cada sessão com a previsão de M/M/32 **na utilização que ela de
+fato apresentou**, calculada por [`analysis/fila`](../analysis/fila):
 
-Com 32 conexões e λ = 1000 por segundo, calculado por
-[`analysis/fila`](../analysis/fila):
+| Sessão | E[S] | Utilização | M/M/c prevê | Observado | Razão |
+|--------|------|-----------|-------------|-----------|-------|
+| 29/09 | 30,36 ms | 94,9% | 78,4 ms | **1,1 ms** | 70× |
+| 28/09 | 31,20 ms | 97,5% | 172,8 ms | **55,1 ms** | 3× |
 
-| E[S] | Capacidade | Utilização | Erlang C | p99 de espera previsto |
-|------|-----------|-----------|----------|------------------------|
-| 27,0 ms (p50 — **errado**) | 1185 TPS | 84,4% | 0,264 | 17,7 ms |
-| **30,0 ms (média analítica)** | **1067 TPS** | **93,8%** | 0,630 | **62,2 ms** |
-| 31,2 ms (média empírica) | 1026 TPS | 97,5% | 0,839 | 172,8 ms |
+O modelo **superestima por uma a duas ordens de grandeza**, e erra
+qualitativamente: prevê enfileiramento substancial a 94,9%, onde praticamente
+não há nenhum.
 
-**Observado: 55,1 ms.**
+> **Correção.** Uma versão anterior afirmou concordância dentro de 13% entre
+> modelo e observação. A comparação estava malfeita: confrontava a observação de
+> 28/09, colhida a 97,5% de utilização, com a previsão do modelo avaliada em
+> 30 ms, que corresponde a 93,8%. Observação de uma utilização contra previsão
+> de outra. Corrigida a comparação, não há concordância — há superestimação
+> sistemática.
 
-Com a mediana, o modelo erra por um fator de três. Com a média analítica, prevê
-62,2 ms contra 55,1 ms medidos — concordância dentro de 13%.
-
-A história muda: a 1000 TPS a utilização do pool **não é 84%, é de 94% a 98%**.
-O sistema estava à beira da saturação, não confortável. É exatamente por isso
-que a espera entra em regime não-linear ali: entre 84% e 94% de utilização, o
-p99 previsto salta de 18 ms para 62 ms.
-
-#### Ressalva sobre o modelo
-
-O M/M/c pressupõe **tempo de serviço exponencial**, de coeficiente de variação
-1, e **chegadas de Poisson**. Nenhuma das duas hipóteses vale aqui:
+A discrepância é **esperada** e tem causa identificada:
 
 | Hipótese do M/M/c | Realidade do experimento |
 |-------------------|--------------------------|
 | serviço exponencial, CV = 1 | constante mais lognormal, CV = 0,437 |
 | chegadas de Poisson, CV = 1 | modelo aberto, chegadas quase determinísticas |
 
-As duas diferenças **reduzem** a fila em relação ao M/M/c, que portanto
-superestima a espera. Isso explica por que a média empírica de 31,2 ms, que
-seria a mais correta para o cálculo de utilização, prevê 172,8 ms — três vezes o
-observado — enquanto a analítica de 30,0 ms cai perto do medido.
+Ambas as diferenças empurram o joelho da curva para muito perto de ρ = 1. Um
+sistema com chegadas e serviço pouco variáveis enfileira bem menos, e bem mais
+tarde, que um M/M/c de mesma utilização.
 
-**A concordância vale como verificação de ordem de grandeza do mecanismo, não
-como ajuste de modelo.** O que o confronto estabelece é que o enfileiramento no
-pool explica quantitativamente a diferença entre as duas latências; não que o
-sistema seja um M/M/32.
+**O M/M/c serve aqui como limite superior grosseiro, não como modelo.** Fica
+registrado por honestidade sobre o que foi tentado, e porque o desacordo é
+informativo: ele confirma que o sistema é de baixa variabilidade nas duas
+pontas.
 
-#### Por que isto importa
+#### O que fica estabelecido
 
-O autorizador está saudável nos quatro níveis: a latência de serviço a 1000 TPS
-é indistinguível da de 100 TPS. Visto de fora, porém, o sistema entrega p99 de
-138 ms contra 83 ms — **67% pior**, e o gargalo não está no autorizador.
+O mecanismo está confirmado empiricamente, e as duas sessões **delimitam o
+início do enfileiramento**:
 
-Uma medição que reportasse apenas latência de serviço declararia o gargalo
-inexistente. É o argumento empírico mais direto a favor de medir a partir do
-instante de chegada pretendido.
+> Entre **94,9% e 97,5%** de utilização do pool, o p99 observado pelo cliente
+> passa de indistinguível da latência de serviço para **67% pior** que ela.
 
-Consequência prática, em forma de regra de dimensionamento — com o tempo
-**médio** de serviço, que é o erro que esta seção corrige:
+A transição é abrupta, como se espera de um sistema de baixa variabilidade, e é
+o oposto do que a intuição de "84% de utilização é confortável" sugeriria — a
+intuição que o cálculo pela mediana produzia.
+
+O autorizador está saudável nos dois casos: a latência de serviço a 1000 TPS é
+indistinguível da de 100 TPS em ambas as sessões. Visto de fora, num dos casos
+o sistema entrega p99 de 138 ms contra 83 ms de serviço.
+
+**Uma medição que reportasse apenas latência de serviço declararia o gargalo
+inexistente nas duas sessões.** É o argumento empírico mais direto a favor de
+medir a partir do instante de chegada pretendido.
+
+#### Consequência prática
+
+A margem é estreita o bastante para que a variação entre sessões a atravesse
+sozinha: 2,7% no tempo de serviço separou um sistema saudável de um degradado.
+
+Regra de dimensionamento, com o tempo **médio** de serviço:
 
 > conexões ≥ TPS × E[S] ÷ utilização alvo
 
-Para 1000 TPS, E[S] de 31,2 ms e utilização alvo de 50%, seriam necessárias
-**63 conexões**, não as 32 usadas.
+Para 1000 TPS, E[S] de 31 ms e utilização alvo de 50%: **62 conexões**, não as
+32 usadas. Dimensionar para 95% de utilização, como as 32 conexões fazem,
+coloca o sistema exatamente na faixa em que uma flutuação de 3% no tempo de
+serviço decide se o p99 dobra.
 
 ### 10.5 O nível de 10 TPS é ruidoso e por quê
 
@@ -1765,14 +1781,15 @@ produz, por construção, amostras muito diferentes entre níveis. **O p99 do n�
 de 10 TPS não deve ser comparado ao dos demais**, e o p99,9 não deve ser
 reportado para ele.
 
-### 10.6 Repetições não são réplicas independentes para desfecho de negócio
+### 10.6 Repetições precisam de sementes independentes
 
-Esta é uma limitação do desenho, descoberta na análise e não prevista.
+Esta é uma limitação do desenho, descoberta na análise e corrigida com uma
+segunda execução.
 
-Ao aplicar o teste de independência às cinco repetições de 1000 TPS, as cinco
-devolveram **exatamente o mesmo qui-quadrado**, 12,6974. A conferência direta
-confirmou o motivo: o resumo criptográfico do conjunto de pares
-(transação, código de resposta) é **idêntico byte a byte** nas cinco.
+Ao aplicar o teste de independência às cinco repetições de 1000 TPS da execução
+de 28/09, as cinco devolveram **exatamente o mesmo qui-quadrado**, 12,6974. A
+conferência direta confirmou o motivo: o resumo criptográfico do conjunto de
+pares (transação, código de resposta) era **idêntico byte a byte** nas cinco.
 
 A causa é o encadeamento de decisões determinísticas:
 
@@ -1782,55 +1799,71 @@ STAN     = índice da chegada
 ordem da massa = f(semente do injetor)
 ```
 
-Com as três sementes fixas entre repetições, as cinco consomem as mesmas
-transações na mesma ordem e recebem as mesmas decisões. As repetições são
-réplicas independentes **para latência** — que variou de 26,5 a 27,5 ms de
-mediana — e **uma única amostra** para desfecho de negócio.
+Com as três sementes fixas entre repetições, as cinco consumiam as mesmas
+transações na mesma ordem e recebiam as mesmas decisões. Eram réplicas
+independentes **para latência** — que variou de 26,5 a 27,5 ms de mediana — e
+**uma única amostra** para desfecho de negócio. Tratar as cinco como
+independentes seria **pseudorreplicação**.
 
-Tratar as cinco como independentes numa análise de recusa seria
-**pseudorreplicação**.
+**Correção.** O orquestrador passou a somar o número da repetição à semente de
+consumo da massa (`--vary-seed`, padrão ligado), e o experimento foi
+**reexecutado por inteiro** em 29/09. Os resumos criptográficos das cinco
+repetições passam a diferir.
 
-**Correção implementada.** O orquestrador passou a somar o número da repetição
-à semente de consumo da massa (`--vary-seed`, padrão ligado), de modo que cada
-repetição percorre a massa em ordem distinta. A verificação confirmou que os
-resumos criptográficos passam a diferir entre repetições.
+As duas execuções ficam registradas:
 
-Fixar a semente continua disponível e é o comportamento correto quando o
+| Execução | Sementes | Papel |
+|----------|----------|-------|
+| `experimento-20260928T110052` | fixas | histórico; latência válida, desfecho com uma amostra por nível |
+| `experimento-replicas-20260929T152607` | independentes por repetição | **resultados de desfecho do artigo** |
+
+Fixar a semente continua disponível e é o comportamento **correto** quando o
 desenho pede comparação pareada — como no controle positivo da seção 9, em que
-a única diferença entre as condições precisa ser o viés injetado.
-
-**Os experimentos desta seção foram executados antes da correção.** Portanto:
-
-- a análise de **latência** usa as cinco repetições legitimamente;
-- a análise de **desfecho** dispõe de uma amostra por nível, ainda que de
-  90.000 requisições a 1000 TPS.
+a identidade byte a byte dos estratos não viesados é justamente o argumento de
+validade interna. O `--vary-seed` destina-se às repetições de volumetria, onde
+se precisa de réplicas independentes de desfecho.
 
 ### 10.7 Critério de detecção: significância não basta
 
-O teste de independência entre recusa e MCC a 1000 TPS devolveu χ² = 12,70 com
-6 graus de liberdade e **p = 0,0481** — rejeitando a independência a 5% contra
-um alvo **sem viés configurado**.
+#### O falso positivo era artefato da pseudorreplicação
 
-Não é erro aleatório no sentido usual: dado o determinismo do alvo, o resultado
-é reprodutível. É uma flutuação daquele conjunto específico de STANs que calha
-de cruzar o limiar.
+Na execução de 28/09, o teste de independência entre recusa e MCC a 1000 TPS
+devolveu χ² = 12,70 com 6 graus de liberdade e **p = 0,0481**, rejeitando a
+independência a 5% contra um alvo **sem viés configurado**. Por ser
+determinístico, o resultado se repetiu idêntico nas cinco repetições, o que lhe
+dava aparência de achado sistemático.
 
-Isso é **achado, não defeito**. Ele mostra que significância estatística
-isolada não serve como critério de detecção em regime de alta volumetria,
-precisamente porque **N cresce com a carga**: quanto maior a taxa, mais o teste
-acusa diferenças irrelevantes.
+Com réplicas independentes, em 29/09, **nenhuma das cinco rejeita**:
 
-#### Os dois pontos medidos fixam a escala
+| Repetição | χ² | p-valor | Diferença relativa entre taxas |
+|-----------|-----|---------|-------------------------------|
+| 1 | 4,70 | 0,582 | 5,3% |
+| 2 | 3,42 | 0,754 | 4,3% |
+| 3 | 1,91 | 0,928 | 3,3% |
+| 4 | 9,07 | 0,170 | 7,2% |
+| 5 | 0,97 | 0,987 | 2,1% |
 
-| Condição | Taxa mínima | Taxa máxima | Diferença relativa | p-valor |
-|----------|-------------|-------------|--------------------|---------|
-| experimento a 1000 TPS, **sem** viés | 0,1456 | 0,1573 | **8%** | 0,048 |
-| experimento a 500 TPS, **sem** viés | — | — | — | 0,847 |
-| controle positivo, **com** viés injetado (seção 9) | 0,1418 | 0,4091 | **189%** | < 10⁻¹² |
+Zero de cinco, com p entre 0,17 e 0,99. O p = 0,048 era **uma extração** que
+calhou de cruzar o limiar, e a pseudorreplicação a multiplicou por cinco.
 
-A separação é limpa e ultrapassa uma ordem de grandeza: **8% é o ruído a
-N = 90.000; 189% é o sinal verdadeiro.** Nenhum limiar entre os dois é
-arbitrário no sentido que importa — há uma lacuna larga onde colocá-lo.
+São, portanto, duas lições encadeadas: a pseudorreplicação não apenas infla a
+confiança — ela **transforma uma flutuação isolada em aparência de padrão**.
+
+#### O critério, mesmo assim, precisa de tamanho de efeito
+
+A correção não dispensa o critério. Com N crescendo junto com a carga, o teste
+passa a acusar diferenças sem relevância prática, e os dados medem a escala
+disso:
+
+| Condição | Diferença relativa entre taxas | p-valor |
+|----------|-------------------------------|---------|
+| experimento a 1000 TPS, sem viés, 5 réplicas | **2,1% a 7,2%** | 0,17 a 0,99 |
+| experimento a 1000 TPS, sem viés, extração de 28/09 | 8,0% | 0,048 |
+| controle positivo, **com** viés injetado (seção 9) | **189%** | < 10⁻¹² |
+
+A separação ultrapassa uma ordem de grandeza: **o ruído a N = 90.000 fica entre
+2% e 8%; o sinal verdadeiro é de 189%.** Há uma lacuna larga onde colocar o
+limiar.
 
 #### Critério adotado
 
@@ -1838,25 +1871,23 @@ arbitrário no sentido que importa — há uma lacuna larga onde colocá-lo.
 > quando, as duas condições valem:
 >
 > 1. **p < 0,05** no teste de independência, e
-> 2. **diferença relativa entre a maior e a menor taxa acima de um limiar
->    declarado**, fixado neste trabalho em **50%**.
+> 2. **diferença relativa entre a maior e a menor taxa acima de 50%**.
 >
-> O limiar de 50% fica bem acima do ruído medido de 8% e bem abaixo do sinal
-> verdadeiro de 189%, na lacuna entre os dois.
+> O limiar de 50% fica bem acima do ruído medido, de até 8%, e bem abaixo do
+> sinal verdadeiro, de 189%.
 
-Pelo critério revisado, o resultado a 1000 TPS **não é detecção**: passa em
-significância e reprova em tamanho de efeito.
+Pelo critério, a extração de 28/09 **não é detecção**: passava em significância
+e reprovava em tamanho de efeito. O critério a teria rejeitado mesmo antes de a
+pseudorreplicação ser descoberta — que é exatamente a robustez que se espera de
+um critério.
 
 #### Fundamentação
 
 A recomendação de reportar tamanho de efeito com intervalo de confiança, em vez
 de p-valor isolado, é a de Kalibera & Jones (2020), e o motivo alegado por eles
-é exatamente o que este experimento exibiu: testes de significância são mal
-interpretados quando a amostra é grande, porque passam a detectar diferenças
-sem relevância prática.
+é o que este experimento exibiu: testes de significância são mal interpretados
+quando a amostra é grande.
 
-O `analysis/qui2` já reporta o intervalo de confiança de Wilson de cada taxa,
-que é o insumo do segundo critério. A leitura correta de uma tabela de saída é,
-portanto: verificar o p-valor, e em seguida verificar se os intervalos de
-confiança se separam por margem relevante — não apenas se são distintos.
+O `analysis/qui2` já reporta o intervalo de Wilson de cada taxa, que é o insumo
+do segundo critério.
 
