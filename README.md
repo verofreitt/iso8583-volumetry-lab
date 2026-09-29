@@ -388,20 +388,43 @@ A latência de serviço é praticamente idêntica nos quatro níveis — o alvo 
 degradou. Mas a 1000 TPS o p99 observado pelo cliente é **138 ms**, contra
 83 ms de serviço:
 
-| Alvo | Utilização do pool | p99 resposta − serviço | Atraso de agendamento |
-|------|--------------------|------------------------|----------------------|
-| 100 TPS | 8,4% | 0,6 ms | 0,45 ms |
-| 500 TPS | 42,2% | 2,0 ms | 0,76 ms |
-| **1000 TPS** | **84,4%** | **55,1 ms** | 0,77 ms |
+| Alvo | p99 resposta − serviço | Atraso de agendamento |
+|------|------------------------|----------------------|
+| 100 TPS | 0,6 ms | 0,45 ms |
+| 500 TPS | 2,0 ms | 0,76 ms |
+| **1000 TPS** | **55,1 ms** | 0,77 ms |
 
 Os 55 ms não são atraso do injetor — o agendamento permaneceu em 0,77 ms. É
-**fila no pool de conexões**: com 32 conexões e serviço de 27 ms a capacidade é
-de ~1185 TPS, e a 1000 TPS a utilização chega a 84%.
+**fila no pool de conexões**, e o modelo confirma quantitativamente.
+
+A utilização se calcula com o tempo **médio** de serviço, não com a mediana. A
+distribuição do alvo foi configurada, então a média é analítica: base de 20 ms
+mais lognormal de média 10 ms dá **30,0 ms**, contra 26,1 ms de mediana. A média
+empírica medida foi 31,2 ms.
+
+| E[S] | Capacidade | Utilização | p99 de espera previsto |
+|------|-----------|-----------|------------------------|
+| 27,0 ms (mediana) | 1185 TPS | 84,4% | 17,7 ms |
+| **30,0 ms (média analítica)** | **1067 TPS** | **93,8%** | **62,2 ms** |
+| 31,2 ms (média empírica) | 1026 TPS | 97,5% | 172,8 ms |
+
+**Observado: 55,1 ms.** Com a média, o modelo acerta dentro de 13%; com a
+mediana, erra por um fator de três. A utilização real a 1000 TPS é de **94% a
+98%** — o sistema estava à beira da saturação, não confortável.
+
+> **Ressalva.** M/M/c pressupõe serviço exponencial (CV = 1) e chegadas de
+> Poisson. Aqui o serviço tem CV = 0,44 e as chegadas são quase
+> determinísticas; as duas diferenças reduzem a fila, e o modelo superestima. A
+> concordância vale como verificação de ordem de grandeza do mecanismo, não
+> como ajuste de modelo. Calculado por [`analysis/fila`](analysis/fila).
 
 É o gargalo que uma medição só de latência de serviço reportaria como
-inexistente. Daí a regra de dimensionamento:
+inexistente. Daí a regra de dimensionamento, com o tempo **médio**:
 
-> conexões ≥ TPS × latência de serviço ÷ utilização alvo
+> conexões ≥ TPS × E[S] ÷ utilização alvo
+
+Para 1000 TPS, E[S] de 31,2 ms e utilização alvo de 50%: **63 conexões**, não
+as 32 usadas.
 
 ### Limitações declaradas
 
@@ -415,10 +438,15 @@ transações e recebem as mesmas decisões — são réplicas apenas para latên
 Corrigido depois dos experimentos com `-vary-seed`, que soma o número da
 repetição à semente de consumo.
 
-**Significância não é relevância.** A 1000 TPS o teste de independência dá
-p = 0,048 num alvo sem viés, mas a diferença entre as taxas é de 8%, contra
-189% no controle positivo. Com 90.000 observações o teste detecta diferenças
-irrelevantes; reporte tamanho de efeito ao lado do p-valor.
+**Significância não basta como critério de detecção.** A 1000 TPS o teste de
+independência dá p = 0,048 num alvo *sem viés* — mas a diferença entre as taxas
+é de 8%, contra 189% no controle positivo. Com N crescendo junto com a carga, o
+teste passa a acusar o irrelevante.
+
+O critério adotado exige as duas condições: **p < 0,05 E diferença relativa
+acima de 50%**. O limiar fica na lacuna entre o ruído medido (8%) e o sinal
+verdadeiro (189%). Pelo critério revisado, o resultado a 1000 TPS **não é
+detecção**.
 
 ## Limites conhecidos do aparato
 
@@ -596,6 +624,7 @@ internal/massa/      leitura dos CSVs de entrada (pendente)
 data/massa.csv       massa sintética de entrada (versionada)
 results/             saída bruta, uma pasta por rodada
 analysis/qui2/       teste de independência recusa × atributo
+analysis/fila/       utilização e espera prevista do pool (M/M/c)
 docs/experimento.md  ambiente, decisões de projeto e procedimento
 ```
 

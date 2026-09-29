@@ -1234,6 +1234,90 @@ O episódio é registrado porque afeta a replicabilidade: quem reproduzir o
 trabalho em Windows com Defender ativo pode encontrar o mesmo bloqueio, e a
 mensagem de erro não sugere a solução.
 
+### 6.13 Reconciliando o teto da calibração com os experimentos
+
+Duas medições pareciam contraditórias e precisam ser reconciliadas antes da
+redação:
+
+- a primeira calibração declarou **teto de 500 TPS** pelo critério de aderência;
+- os experimentos finais rodaram **1000 TPS** com aderência de 0,77 ms e vazão
+  em 100% do alvo.
+
+#### A divergência é entre sessões, não entre alvos
+
+A hipótese natural seria que a calibração roda contra alvo de eco, de serviço
+quase nulo, enquanto os experimentos rodam contra um alvo de 30 ms. **Os dados
+descartam essa explicação.**
+
+| | Serviço do alvo | Atraso de agendamento |
+|---|---|---|
+| calibração 28/09 | 0,3 a 0,9 ms | 440 a 710 µs |
+| experimentos 28/09 | 30,5 a 36,0 ms | 454 a 772 µs |
+
+O atraso é **o mesmo nas duas faixas**, e não poderia ser diferente: ele é
+medido no despacho, **antes** de a requisição ser enviada, e portanto não sabe
+nada sobre o alvo. O intervalo entre chegadas, por sua vez, é fixado pela taxa,
+também independentemente do alvo.
+
+A origem real da divergência é a variabilidade entre sessões já documentada na
+seção 6.9:
+
+| Medição, todas a 1000 TPS (intervalo de 1000 µs) | Atraso mediano | Veredito |
+|---|---|---|
+| calibração 22/09 | 1408 µs | satura |
+| calibração 28/09 | 574 µs | passa |
+| experimentos 28/09 | 772 µs | passa |
+
+O teto de 500 TPS veio da sessão de 22/09, em que o atraso excedeu o intervalo
+a 1000 TPS. Na sessão de 28/09 o mesmo nível passou com folga, e os
+experimentos, rodados naquela sessão, são consistentes com a calibração
+daquela sessão. **Não há contradição: há duas sessões diferentes**, e é por isso
+que a seção 6.11 exige recalibrar antes de cada lote.
+
+#### O que a investigação revelou: são dois limites, não um
+
+O critério de aderência compara o atraso com o **intervalo entre chegadas**.
+Isso responde a uma pergunta: *o processo de chegadas é uniforme?* É uma
+propriedade do injetor, independente do alvo.
+
+Há uma segunda pergunta, que o critério não faz: *o atraso contamina a latência
+medida?* Essa depende do **tempo de serviço**, não do intervalo:
+
+| Alvo | Serviço | Atraso | Atraso ÷ serviço |
+|------|---------|--------|------------------|
+| eco | 0,3 ms | 574 µs | **191%** |
+| eco | 0,8 ms | 574 µs | **72%** |
+| mock com 20 ms + jitter | 31,2 ms | 772 µs | **2,5%** |
+
+Contra o alvo de eco, o erro do próprio injetor é da ordem do que se pretende
+medir, ou maior. Contra o alvo do experimento, é ruído de 2,5%.
+
+#### Consequência para o que vai ao artigo
+
+A afirmação "o teto do aparato é de X TPS" precisa ser desdobrada em duas, mais
+precisas:
+
+> **1. Teto de fidelidade do processo de chegadas.** A taxa acima da qual o
+> atraso de agendamento supera o intervalo entre chegadas e a carga deixa de
+> ser um fluxo uniforme. É propriedade do injetor, **independe do alvo**, e
+> varia entre sessões — 500 TPS em 22/09, 2000 TPS em 28/09. Precisa ser
+> recalibrado e reportado por sessão.
+>
+> **2. Piso de mensurabilidade.** O aparato só caracteriza um alvo cujo tempo
+> de serviço seja muito maior que o atraso de agendamento, da ordem de 0,5 a
+> 0,8 ms. Abaixo de aproximadamente 10 ms de serviço, o erro do injetor passa
+> de 5% da grandeza medida; contra um alvo de eco, chega a 191%.
+
+A segunda afirmação esclarece o papel da calibração: rodar contra `--echo-only`
+**caracteriza o aparato, não mede sistema algum**. O número que sai dali é o
+piso do injetor, e usá-lo como se fosse latência de um sistema sob teste seria
+o erro que a seção 6.11 já corrigiu no relatório.
+
+Os experimentos da seção 10 estão confortavelmente acima do piso de
+mensurabilidade: com serviço de 31,2 ms e atraso de 0,77 ms, a contaminação é
+de 2,5% — e a concordância de 2% entre a distribuição configurada e a medida,
+na seção 10.2, é a confirmação empírica disso.
+
 ---
 
 ## 7. Ambiente de execução
@@ -1570,33 +1654,99 @@ A latência de **serviço** é praticamente idêntica nos quatro níveis — o a
 degradou. A de **resposta**, que parte do instante de chegada pretendido, conta
 outra história:
 
-| Alvo | Utilização do pool | p50 resposta − serviço | p99 resposta − serviço | Atraso de agendamento |
-|------|--------------------|------------------------|------------------------|----------------------|
-| 10 TPS | 0,8% | 0,9 ms | 19,3 ms | 2,34 ms |
-| 100 TPS | 8,4% | 0,5 ms | 0,6 ms | 0,45 ms |
-| 500 TPS | 42,2% | 0,6 ms | 2,0 ms | 0,76 ms |
-| **1000 TPS** | **84,4%** | **4,9 ms** | **55,1 ms** | 0,77 ms |
+| Alvo | p50 resposta − serviço | p99 resposta − serviço | Atraso de agendamento |
+|------|------------------------|------------------------|----------------------|
+| 10 TPS | 0,9 ms | 19,3 ms | 2,34 ms |
+| 100 TPS | 0,5 ms | 0,6 ms | 0,45 ms |
+| 500 TPS | 0,6 ms | 2,0 ms | 0,76 ms |
+| **1000 TPS** | **4,9 ms** | **55,1 ms** | 0,77 ms |
 
 A 1000 TPS o p99 observado pelo cliente é **138 ms**, contra 83 ms de serviço. A
 diferença de 55 ms **não é atraso do injetor**: o atraso de agendamento
 permaneceu em 0,77 ms, igual ao dos demais níveis.
 
-A causa é o **pool de conexões**. Com 32 conexões e serviço de 27 ms, a
-capacidade é de 32 ÷ 0,027 ≈ 1185 TPS; a 1000 TPS a utilização chega a 84%, e
-em regime de fila M/M/c a espera cresce de forma não-linear nessa faixa. As
-requisições enfileiram esperando conexão livre, e essa espera pertence à
-experiência do cliente.
+#### O tempo médio de serviço é analítico, não estimado
 
-**É exatamente o gargalo que uma medição só de latência de serviço reportaria
-como inexistente.** O autorizador está saudável nos quatro níveis; o sistema,
-visto de fora, não está.
+A utilização de um sistema de filas é a razão entre a taxa de chegada e a taxa
+de serviço, e a taxa de serviço se calcula com o tempo **médio**, não com a
+mediana. A distribuição do alvo foi configurada, então a média é obtida dos
+parâmetros:
 
-Consequência prática, em forma de regra de dimensionamento:
+| Grandeza | Valor |
+|----------|-------|
+| base | 20,000 ms |
+| jitter: μ = ln 10 − ½, σ = 1 | |
+| **média** da lognormal = exp(μ + σ²/2) | **10,000 ms** (por construção) |
+| mediana da lognormal = exp(μ) | 6,065 ms |
+| **média analítica de serviço** | **30,000 ms** |
+| mediana analítica de serviço | 26,065 ms |
 
-> conexões ≥ TPS × latência de serviço ÷ utilização alvo
+A média empírica medida foi de **31,2 ms** a 1000 TPS. O excesso de 1,2 ms sobre
+a analítica é o tempo de ida e volta em loopback somado ao excesso do
+`time.Sleep` caracterizado na seção 4.4.
 
-Para 1000 TPS, serviço de 27 ms e utilização alvo de 50%, seriam necessárias
-54 conexões, não 32.
+> **Correção.** Uma versão anterior deste documento calculou a capacidade com
+> 27 ms, que é o p50 medido e não a média. O erro subestimava a utilização de
+> forma grave e é corrigido abaixo.
+
+#### Utilização corrigida e confronto com o modelo
+
+Com 32 conexões e λ = 1000 por segundo, calculado por
+[`analysis/fila`](../analysis/fila):
+
+| E[S] | Capacidade | Utilização | Erlang C | p99 de espera previsto |
+|------|-----------|-----------|----------|------------------------|
+| 27,0 ms (p50 — **errado**) | 1185 TPS | 84,4% | 0,264 | 17,7 ms |
+| **30,0 ms (média analítica)** | **1067 TPS** | **93,8%** | 0,630 | **62,2 ms** |
+| 31,2 ms (média empírica) | 1026 TPS | 97,5% | 0,839 | 172,8 ms |
+
+**Observado: 55,1 ms.**
+
+Com a mediana, o modelo erra por um fator de três. Com a média analítica, prevê
+62,2 ms contra 55,1 ms medidos — concordância dentro de 13%.
+
+A história muda: a 1000 TPS a utilização do pool **não é 84%, é de 94% a 98%**.
+O sistema estava à beira da saturação, não confortável. É exatamente por isso
+que a espera entra em regime não-linear ali: entre 84% e 94% de utilização, o
+p99 previsto salta de 18 ms para 62 ms.
+
+#### Ressalva sobre o modelo
+
+O M/M/c pressupõe **tempo de serviço exponencial**, de coeficiente de variação
+1, e **chegadas de Poisson**. Nenhuma das duas hipóteses vale aqui:
+
+| Hipótese do M/M/c | Realidade do experimento |
+|-------------------|--------------------------|
+| serviço exponencial, CV = 1 | constante mais lognormal, CV = 0,437 |
+| chegadas de Poisson, CV = 1 | modelo aberto, chegadas quase determinísticas |
+
+As duas diferenças **reduzem** a fila em relação ao M/M/c, que portanto
+superestima a espera. Isso explica por que a média empírica de 31,2 ms, que
+seria a mais correta para o cálculo de utilização, prevê 172,8 ms — três vezes o
+observado — enquanto a analítica de 30,0 ms cai perto do medido.
+
+**A concordância vale como verificação de ordem de grandeza do mecanismo, não
+como ajuste de modelo.** O que o confronto estabelece é que o enfileiramento no
+pool explica quantitativamente a diferença entre as duas latências; não que o
+sistema seja um M/M/32.
+
+#### Por que isto importa
+
+O autorizador está saudável nos quatro níveis: a latência de serviço a 1000 TPS
+é indistinguível da de 100 TPS. Visto de fora, porém, o sistema entrega p99 de
+138 ms contra 83 ms — **67% pior**, e o gargalo não está no autorizador.
+
+Uma medição que reportasse apenas latência de serviço declararia o gargalo
+inexistente. É o argumento empírico mais direto a favor de medir a partir do
+instante de chegada pretendido.
+
+Consequência prática, em forma de regra de dimensionamento — com o tempo
+**médio** de serviço, que é o erro que esta seção corrige:
+
+> conexões ≥ TPS × E[S] ÷ utilização alvo
+
+Para 1000 TPS, E[S] de 31,2 ms e utilização alvo de 50%, seriam necessárias
+**63 conexões**, não as 32 usadas.
 
 ### 10.5 O nível de 10 TPS é ruidoso e por quê
 
@@ -1655,27 +1805,58 @@ a única diferença entre as condições precisa ser o viés injetado.
 - a análise de **desfecho** dispõe de uma amostra por nível, ainda que de
   90.000 requisições a 1000 TPS.
 
-### 10.7 Significância não é relevância
+### 10.7 Critério de detecção: significância não basta
 
 O teste de independência entre recusa e MCC a 1000 TPS devolveu χ² = 12,70 com
-6 graus de liberdade e **p = 0,0481** — rejeitando a independência a 5% num
-alvo **sem viés configurado**.
+6 graus de liberdade e **p = 0,0481** — rejeitando a independência a 5% contra
+um alvo **sem viés configurado**.
 
-Não é erro aleatório: dado o determinismo, o resultado é reprodutível. É uma
-flutuação amostral daquele conjunto específico de STANs que calha de cruzar o
-limiar.
+Não é erro aleatório no sentido usual: dado o determinismo do alvo, o resultado
+é reprodutível. É uma flutuação daquele conjunto específico de STANs que calha
+de cruzar o limiar.
 
-O que importa é o **tamanho do efeito**:
+Isso é **achado, não defeito**. Ele mostra que significância estatística
+isolada não serve como critério de detecção em regime de alta volumetria,
+precisamente porque **N cresce com a carga**: quanto maior a taxa, mais o teste
+acusa diferenças irrelevantes.
 
-| | Taxa mínima | Taxa máxima | Diferença relativa |
-|---|---|---|---|
-| experimento a 1000 TPS, sem viés | 0,1456 | 0,1573 | **8%** |
-| controle positivo, com viés injetado (seção 9) | 0,1418 | 0,4091 | **189%** |
+#### Os dois pontos medidos fixam a escala
 
-A 500 TPS, com metade das amostras, o mesmo teste dá p = 0,847.
+| Condição | Taxa mínima | Taxa máxima | Diferença relativa | p-valor |
+|----------|-------------|-------------|--------------------|---------|
+| experimento a 1000 TPS, **sem** viés | 0,1456 | 0,1573 | **8%** | 0,048 |
+| experimento a 500 TPS, **sem** viés | — | — | — | 0,847 |
+| controle positivo, **com** viés injetado (seção 9) | 0,1418 | 0,4091 | **189%** | < 10⁻¹² |
 
-> Com dezenas de milhares de observações, um teste de significância detecta
-> diferenças irrelevantes. **O artigo deve reportar tamanho de efeito ao lado do
-> p-valor**, e um p pouco abaixo de 0,05 sobre 90.000 observações não sustenta
-> afirmação de padrão. O contraste com o controle positivo — onde a taxa mais
-> que dobra — é o que dá escala ao que conta como padrão detectado.
+A separação é limpa e ultrapassa uma ordem de grandeza: **8% é o ruído a
+N = 90.000; 189% é o sinal verdadeiro.** Nenhum limiar entre os dois é
+arbitrário no sentido que importa — há uma lacuna larga onde colocá-lo.
+
+#### Critério adotado
+
+> Um padrão de erro por atributo é considerado **detectado** quando, e somente
+> quando, as duas condições valem:
+>
+> 1. **p < 0,05** no teste de independência, e
+> 2. **diferença relativa entre a maior e a menor taxa acima de um limiar
+>    declarado**, fixado neste trabalho em **50%**.
+>
+> O limiar de 50% fica bem acima do ruído medido de 8% e bem abaixo do sinal
+> verdadeiro de 189%, na lacuna entre os dois.
+
+Pelo critério revisado, o resultado a 1000 TPS **não é detecção**: passa em
+significância e reprova em tamanho de efeito.
+
+#### Fundamentação
+
+A recomendação de reportar tamanho de efeito com intervalo de confiança, em vez
+de p-valor isolado, é a de Kalibera & Jones (2020), e o motivo alegado por eles
+é exatamente o que este experimento exibiu: testes de significância são mal
+interpretados quando a amostra é grande, porque passam a detectar diferenças
+sem relevância prática.
+
+O `analysis/qui2` já reporta o intervalo de confiança de Wilson de cada taxa,
+que é o insumo do segundo critério. A leitura correta de uma tabela de saída é,
+portanto: verificar o p-valor, e em seguida verificar se os intervalos de
+confiança se separam por margem relevante — não apenas se são distintos.
+
