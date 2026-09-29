@@ -1738,9 +1738,16 @@ início do enfileiramento**:
 > Entre **94,9% e 97,5%** de utilização do pool, o p99 observado pelo cliente
 > passa de indistinguível da latência de serviço para **67% pior** que ela.
 
-A transição é abrupta, como se espera de um sistema de baixa variabilidade, e é
-o oposto do que a intuição de "84% de utilização é confortável" sugeriria — a
-intuição que o cálculo pela mediana produzia.
+> **Ressalva grave, resolvida na seção 10.8.** As duas utilizações vieram de
+> **sessões diferentes**, então utilização e sessão variaram juntas e estão
+> confundidas. Como a seção 6.9 mostra que sessão sozinha move o p99 de 1,1 a
+> 34,9 ms — faixa que contém os 55,1 ms aqui observados —, a explicação
+> alternativa de que 28/09 foi simplesmente uma sessão ruim **não é descartada
+> por estes dados**. É o mesmo erro estrutural da varredura sequencial
+> corrigida na seção 6.10.
+>
+> A seção 10.8 desconfunde variando a utilização **dentro de uma sessão**, e a
+> conclusão que sobrevive é mais fraca e mais precisa que a enunciada acima.
 
 O autorizador está saudável nos dois casos: a latência de serviço a 1000 TPS é
 indistinguível da de 100 TPS em ambas as sessões. Visto de fora, num dos casos
@@ -1891,3 +1898,125 @@ quando a amostra é grande.
 O `analysis/qui2` já reporta o intervalo de Wilson de cada taxa, que é o insumo
 do segundo critério.
 
+### 10.8 Varredura de utilização dentro de uma sessão
+
+#### Por que foi necessária
+
+O achado da seção 10.4 comparava duas utilizações, 94,9% e 97,5%, que vieram de
+**sessões diferentes**. Utilização e sessão variaram juntas, e a seção 6.9
+estabelece que sessão sozinha move o p99 de 1,1 a 34,9 ms — faixa que contém os
+55,1 ms observados.
+
+É o mesmo erro estrutural da varredura sequencial corrigida na seção 6.10:
+variável de interesse confundida com uma variável de perturbação já demonstrada
+como grande. O achado era **sugestivo, não estabelecido**.
+
+O desconfundimento exige variar a utilização **dentro de uma sessão**, movendo
+λ em vez de esperar a deriva do tempo de serviço.
+
+#### Desenho
+
+Quatro taxas escolhidas para atingir utilizações alvo de 0,90, 0,95, 0,97 e
+0,98, com a capacidade de 1054 TPS estimada da sessão anterior; três repetições
+cada, ordem sorteada, 90 s por rodada com 20 s de warm-up. Doze rodadas em 19
+minutos, dentro do limite de 30 estipulado.
+
+A utilização reportada é a **realizada**, calculada com a média de serviço
+medida em cada rodada, não a alvo.
+
+#### Resultado
+
+| Utilização realizada | λ | Média de serviço | p99 resp − serv | Atraso médio | Vazão |
+|---------------------|---|------------------|-----------------|--------------|-------|
+| 0,903 | 949 | 30,45 ms | 0,5 ms | 381 µs | 100% |
+| 0,903 | 949 | 30,46 ms | 0,6 ms | 371 µs | 100% |
+| 0,903 | 949 | 30,46 ms | 0,6 ms | 362 µs | 100% |
+| 0,952 | 1001 | 30,43 ms | 1,5 ms | 378 µs | 100% |
+| 0,952 | 1001 | 30,43 ms | 1,3 ms | 382 µs | 100% |
+| **0,962** | 1001 | 30,77 ms | **15,8 ms** | 568 µs | 100% |
+| 0,971 | 1022 | 30,41 ms | 2,7 ms | 362 µs | 100% |
+| **0,973** | 1022 | 30,46 ms | **26,9 ms** | 353 µs | 100% |
+| 0,982 | 1033 | 30,41 ms | 4,6 ms | 335 µs | 100% |
+| 0,982 | 1033 | 30,42 ms | 4,7 ms | 352 µs | 100% |
+| 0,982 | 1033 | 30,42 ms | 4,7 ms | 337 µs | 100% |
+| **0,995** | 1022 | 31,17 ms | **668,1 ms** | 588 µs | 100% |
+
+Três controles descartam explicações alternativas:
+
+- **Atraso de agendamento entre 335 e 588 µs em todas as doze rodadas.** As
+  excursões não são atraso do injetor.
+- **Vazão em 100% do alvo e zero falhas de transporte em todas.** Nenhuma
+  rodada deixou de aplicar a carga.
+- **Média de serviço entre 30,41 e 31,17 ms.** O alvo se comportou igual.
+
+#### O que fica estabelecido, e o que não fica
+
+**Estabelecido: existe um piso de utilização abaixo do qual o enfileiramento não
+aparece.**
+
+| Faixa | Rodadas | Diferença p99 |
+|-------|---------|---------------|
+| utilização ≤ 0,955 | 5 | **0,5 a 1,5 ms** |
+| utilização > 0,955 | 7 | **2,7 a 668,1 ms** |
+
+A separação é limpa **no piso**: nenhuma rodada abaixo de 0,955 passou de
+1,5 ms, e nenhuma acima ficou abaixo de 2,7 ms. Isso desconfunde o achado
+original — a utilização importa, e importa dentro de uma única sessão.
+
+**Não estabelecido: a magnitude acima do piso não é função da utilização.**
+
+A relação não é monótona. A 0,982, três rodadas independentes dão 4,6, 4,7 e
+4,7 ms — notavelmente consistentes. A 0,973, uma única rodada dá 26,9 ms, cinco
+vezes mais, com **mais** capacidade de drenagem:
+
+| Utilização | Drenagem | Diferença p99 |
+|-----------|----------|---------------|
+| 0,962 | 39 req/s | 15,8 ms |
+| 0,971 | 30 req/s | 2,7 ms |
+| 0,973 | 28 req/s | 26,9 ms |
+| 0,982 | 19 req/s | 4,6 / 4,7 / 4,7 ms |
+| 0,995 | 5 req/s | 668,1 ms |
+
+Nem a utilização nem a capacidade de drenagem ordenam as excursões. O único
+caso que a drenagem explica bem é o de 0,995, em que sobram 5 requisições por
+segundo de folga e qualquer fila formada praticamente não drena.
+
+#### Interpretação: amplificação de transientes
+
+A leitura que os dados sustentam é que **acima de ~0,955 de utilização o sistema
+perde a capacidade de absorver transientes**. Uma pausa do coletor de lixo, um
+sobressalto de escalonamento ou uma sequência de sorteios lentos de serviço —
+eventos que a utilização baixa dissolve em milissegundos — formam uma fila que
+demora a drenar. Se um desses eventos ocorre ou não durante uma janela de 70
+segundos é, em boa medida, sorte.
+
+Isso reconcilia as duas observações que pareciam conflitar:
+
+- a utilização **governa a suscetibilidade**: abaixo de 0,955, nenhuma rodada
+  excursiona; acima, algumas excursionam;
+- a **magnitude** de cada excursão depende do transiente que a disparou, não do
+  nível de utilização.
+
+E explica por que o achado original estava confundido com sessão sem estar
+errado: perto da saturação, o ruído de sessão — que a seção 6.9 mediu entre 1,1
+e 34,9 ms — **é amplificado** em latência observada, em vez de permanecer
+invisível como acontece em utilização baixa.
+
+#### Consequência para o artigo
+
+A afirmação da seção 10.4 precisa ser enunciada nesta forma, mais fraca e mais
+precisa:
+
+> Abaixo de aproximadamente 95% de utilização do pool, a latência observada
+> pelo cliente é indistinguível da latência de serviço, de forma consistente
+> entre repetições. Acima desse ponto o sistema passa a apresentar excursões de
+> latência que não são explicadas pelo nível de utilização nem pela capacidade
+> de drenagem, e cuja ocorrência varia entre repetições nominalmente idênticas.
+
+Não se afirma localização de joelho nem previsão de magnitude. O que se afirma
+é o piso, que está bem medido, e a mudança qualitativa de regime acima dele.
+
+Para dimensionamento, a recomendação fica **mais** conservadora que a derivada
+do modelo: não basta ficar abaixo da capacidade, é preciso ficar abaixo de
+~95% dela, porque acima disso o comportamento deixa de ser previsível entre
+execuções.

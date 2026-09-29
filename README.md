@@ -401,9 +401,28 @@ A utilização se calcula com o tempo **médio**, não com a mediana. A distribu
 do alvo foi configurada, então a média é analítica: 20 ms de base mais lognormal
 de média 10 ms dá **30,0 ms**, contra 26,1 ms de mediana.
 
-**O que fica estabelecido:** entre 94,9% e 97,5% de utilização, o p99 observado
-pelo cliente passa de indistinguível da latência de serviço para 67% pior que
-ela. A transição é abrupta.
+Mas essas duas utilizações vieram de **sessões diferentes**, então estavam
+confundidas com efeito de sessão. Uma varredura de utilização **dentro de uma
+única sessão**, variando λ em 949/1001/1022/1033 TPS com 3 repetições e ordem
+sorteada, desconfunde:
+
+| Utilização realizada | Rodadas | p99 resposta − serviço |
+|---------------------|---------|------------------------|
+| ≤ 0,955 | 5 | **0,5 a 1,5 ms** |
+| > 0,955 | 7 | **2,7 a 668,1 ms** |
+
+**O que fica estabelecido:** abaixo de ~95% de utilização o enfileiramento não
+aparece, de forma consistente entre repetições. Acima, aparece — mas a
+magnitude **não** é função da utilização: a 0,982 três rodadas dão 4,6/4,7/4,7 ms,
+enquanto a 0,973 uma dá 26,9 ms, com mais capacidade de drenagem.
+
+A leitura é **amplificação de transientes**: acima de ~95% o sistema perde a
+capacidade de absorver uma pausa de GC ou um sobressalto de escalonamento, e o
+ruído de sessão — que sozinho move o p99 de 1,1 a 34,9 ms — passa a aparecer
+como latência observada em vez de permanecer invisível.
+
+Nas 12 rodadas o atraso de agendamento ficou entre 335 e 588 µs e a vazão em
+100%, o que descarta travamento do injetor como causa.
 
 > **M/M/c não modela este sistema.** Na utilização de cada sessão o modelo prevê
 > 78,4 ms (observado 1,1) e 172,8 ms (observado 55,1) — superestimação de uma a
