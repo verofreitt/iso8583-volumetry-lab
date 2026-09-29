@@ -1,0 +1,111 @@
+{
+  "rodada": {
+    "inicio": "2026-09-28T10:57:51.9618002-03:00",
+    "fim": "2026-09-28T10:58:06.9634494-03:00",
+    "tps_alvo": 1500,
+    "duracao": "15s",
+    "warmup": "5s",
+    "chegadas_descartadas_warmup": 7500,
+    "chegadas_totais": 22500,
+    "conexoes": 32,
+    "repeticao": 5,
+    "ordem_embaralhada": true,
+    "semente_da_ordem": 1,
+    "sequencia_na_execucao": 40,
+    "semente": 1,
+    "massa_arquivo": "data\\massa.csv",
+    "massa_transacoes": 50000
+  },
+  "vazao": {
+    "alvo_tps": 1500,
+    "alcancado_tps": 1500,
+    "percentual_do_alvo": 100,
+    "janela_s": 10,
+    "chegadas_medidas": 15000,
+    "respondidas": 15000
+  },
+  "agendamento": {
+    "atraso_medio_us": 570,
+    "atraso_maximo_us": 29256,
+    "injetor_saturado": false
+  },
+  "latencia_servico": {
+    "amostras": 15000,
+    "media_us": 888.6003999999992,
+    "mediana_us": 458,
+    "p95_us": 2747,
+    "p99_us": 5335,
+    "p99_9_us": 9855,
+    "minimo_us": 118,
+    "maximo_us": 14471,
+    "desvio_padrao_us": 1095.229575897145
+  },
+  "latencia_resposta": {
+    "amostras": 15000,
+    "media_us": 1615.1421999999982,
+    "mediana_us": 1024,
+    "p95_us": 4215,
+    "p99_us": 7847,
+    "p99_9_us": 29823,
+    "minimo_us": 1,
+    "maximo_us": 39743,
+    "desvio_padrao_us": 2000.5183661189317
+  },
+  "desfechos": {
+    "aprovadas": 15000,
+    "recusadas": 0,
+    "erros_transporte": 0,
+    "timeouts": 0,
+    "taxa_aprovacao": 1,
+    "distribuicao_de39": {
+      "00": 15000
+    }
+  },
+  "ambiente": {
+    "versao_go": "go1.25.3",
+    "gomaxprocs": 4,
+    "num_cpu": 4,
+    "goos": "windows",
+    "goarch": "amd64",
+    "gogc": "100 (padrao, nao definido no ambiente)",
+    "relogio_fonte": "QueryPerformanceCounter",
+    "relogio_resolucao_ns": 100,
+    "linha_de_comando": "results\\calibracao-20260928T104552\\injector.exe -tps 1500 -duration 15s -warmup 5s -conns 32 -rep 5 -seq 40 -shuffle=true -order-seed 1 -results results\\calibracao-20260928T104552\\rodadas -sut-config results\\calibracao-20260928T104552\\autorizador.json",
+    "flags_injetor": {
+      "conns": "32",
+      "duration": "15s",
+      "massa": "data\\massa.csv",
+      "order-seed": "1",
+      "rep": "5",
+      "results": "results\\calibracao-20260928T104552\\rodadas",
+      "seed": "1",
+      "seq": "40",
+      "shuffle": "true",
+      "sut-config": "results\\calibracao-20260928T104552\\autorizador.json",
+      "tps": "1500",
+      "warmup": "5s"
+    },
+    "config_autorizador": {
+      "config": {
+        "latency-dist": "exponencial",
+        "approval-rate": 1,
+        "decline-dist": "51:40,05:30,14:20,91:10",
+        "decline-bias": "",
+        "max-conns": 0,
+        "seed": 1,
+        "echo-only": true,
+        "latency-base": "0s",
+        "latency-jitter": "0s"
+      },
+      "ambiente": {
+        "versao_go": "go1.25.3",
+        "gomaxprocs": 4,
+        "num_cpu": 4,
+        "goos": "windows",
+        "goarch": "amd64",
+        "gogc": "100 (padrao, nao definido no ambiente)",
+        "linha_de_comando": "results\\calibracao-20260928T104552\\authorizer.exe --echo-only --quiet --config-out results\\calibracao-20260928T104552\\autorizador.json"
+      }
+    }
+  }
+}

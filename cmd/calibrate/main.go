@@ -52,6 +52,12 @@ type opcoes struct {
 	embaralhar   bool
 	sementeOrdem int64
 	repouso      time.Duration
+
+	argsAutorizador string
+	nome            string
+
+	sementeMassa  int64
+	variarSemente bool
 }
 
 func main() {
@@ -72,6 +78,10 @@ func main() {
 	flag.BoolVar(&o.embaralhar, "shuffle", true, "sorteia a ordem de execucao das rodadas, em vez de varrer os niveis em sequencia")
 	flag.Int64Var(&o.sementeOrdem, "order-seed", 1, "semente do sorteio da ordem de execucao")
 	flag.DurationVar(&o.repouso, "rest", 3*time.Second, "repouso entre rodadas")
+	flag.StringVar(&o.argsAutorizador, "sut-args", "--echo-only", "argumentos do autorizador; o padrao calibra contra o alvo trivial")
+	flag.StringVar(&o.nome, "nome", "calibracao", "prefixo da pasta de saida")
+	flag.Int64Var(&o.sementeMassa, "massa-seed", 42, "semente base da ordem de consumo da massa")
+	flag.BoolVar(&o.variarSemente, "vary-seed", true, "soma o numero da repeticao a semente da massa, tornando as repeticoes independentes tambem no desfecho de negocio")
 	flag.Parse()
 
 	if err := executar(o); err != nil {
@@ -92,7 +102,7 @@ func executar(o opcoes) error {
 	}
 
 	inicio := time.Now()
-	pasta := filepath.Join(o.destino, "calibracao-"+inicio.Format("20060102T150405"))
+	pasta := filepath.Join(o.destino, o.nome+"-"+inicio.Format("20060102T150405"))
 	if err := os.MkdirAll(pasta, 0o755); err != nil {
 		return fmt.Errorf("criando %s: %w", pasta, err)
 	}
@@ -163,10 +173,11 @@ func executar(o opcoes) error {
 			Ordem:        plano,
 			Inicio:       inicio,
 			Fim:          time.Now(),
-			ModoAlvo:     "--echo-only",
+			ModoAlvo:     o.argsAutorizador,
 		},
-		Niveis:   medidos,
-		Ambiente: ambiente(o),
+		Niveis:     medidos,
+		Ambiente:   ambiente(o),
+		Calibracao: ehCalibracao(o.argsAutorizador),
 	}
 	rel.concluir()
 
@@ -229,7 +240,8 @@ func compilar(pasta string) (caminhos, error) {
 func rodada(b caminhos, o opcoes, pasta string, tps float64, rep, sequencia int) (metrics.Resumo, error) {
 	configAutorizador := filepath.Join(pasta, "autorizador.json")
 
-	aut := exec.Command(b.autorizador, "--echo-only", "--quiet", "--config-out", configAutorizador)
+	args := append(argsDoAutorizador(o.argsAutorizador), "--quiet", "--config-out", configAutorizador)
+	aut := exec.Command(b.autorizador, args...)
 	aut.Env = ambienteProcesso(o.gomaxprocsAutorizador, o.gogc)
 	aut.Stderr = io.Discard
 	if err := aut.Start(); err != nil {
@@ -251,7 +263,10 @@ func rodada(b caminhos, o opcoes, pasta string, tps float64, rep, sequencia int)
 		"-warmup", o.warmup.String(),
 		"-conns", strconv.Itoa(o.conexoes),
 		"-rep", strconv.Itoa(rep),
+		"-seed", strconv.FormatInt(sementeDaRodada(o.sementeMassa, rep, o.variarSemente), 10),
 		"-seq", strconv.Itoa(sequencia),
+		"-shuffle="+strconv.FormatBool(o.embaralhar),
+		"-order-seed", strconv.FormatInt(o.sementeOrdem, 10),
 		"-results", rodadas,
 		"-sut-config", configAutorizador,
 	)
@@ -263,6 +278,56 @@ func rodada(b caminhos, o opcoes, pasta string, tps float64, rep, sequencia int)
 	}
 
 	return ultimoResumo(rodadas)
+}
+
+// sementeDaRodada devolve a semente de consumo da massa de uma repeticao.
+//
+// Com --vary-seed, cada repeticao consome a massa em ordem diferente. Sem
+// isso, as repeticoes de um nivel sao replicas independentes apenas para
+// latencia: o desfecho de negocio de cada requisicao e funcao de (semente do
+// mock, STAN), o STAN vem do indice da chegada e a ordem da massa vem da
+// semente do injetor — com as tres fixas, as repeticoes recebem exatamente as
+// mesmas decisoes.
+//
+// Foi o que aconteceu no experimento de 28/09: as cinco repeticoes de cada
+// nivel produziram o mesmo conjunto de pares (transacao, codigo de resposta),
+// byte a byte. Tratar as cinco como independentes numa analise de desfecho
+// seria pseudorreplicacao.
+//
+// Fixar a semente continua util quando o desenho pede comparacao pareada, como
+// no controle positivo da secao 9, em que a unica diferenca entre as condicoes
+// precisa ser o vies injetado.
+func sementeDaRodada(base int64, rep int, variar bool) int64 {
+	if !variar {
+		return base
+	}
+	return base + int64(rep)
+}
+
+// ehCalibracao informa se a varredura mede o aparato ou o sistema sob teste.
+//
+// Contra o alvo trivial, o que sobra de latencia e do aparato, e apurar pisos e
+// teto faz sentido. Contra um alvo com latencia configurada, os mesmos numeros
+// passam a descrever o alvo: reportar a mediana de servico de uma rodada de
+// experimento como "piso de servico, ida e volta em loopback" seria
+// simplesmente falso.
+func ehCalibracao(argsAutorizador string) bool {
+	for _, a := range strings.Fields(argsAutorizador) {
+		if a == "--echo-only" || a == "-echo-only" {
+			return true
+		}
+	}
+	return false
+}
+
+// argsDoAutorizador separa a string de argumentos em campos.
+//
+// A separacao e por espaco, o que impede argumentos que contenham espacos.
+// Nenhum dos parametros do autorizador precisa deles — duracoes, taxas e
+// distribuicoes sao todos compactos — e a alternativa, um analisador de linha
+// de comando completo, seria complexidade sem uso.
+func argsDoAutorizador(spec string) []string {
+	return strings.Fields(spec)
 }
 
 // planejar monta a lista de rodadas e, opcionalmente, sorteia sua ordem.

@@ -1,0 +1,115 @@
+{
+  "rodada": {
+    "inicio": "2026-09-28T11:11:23.6698966-03:00",
+    "fim": "2026-09-28T11:13:23.7112183-03:00",
+    "tps_alvo": 1000,
+    "duracao": "2m0s",
+    "warmup": "30s",
+    "chegadas_descartadas_warmup": 30000,
+    "chegadas_totais": 120000,
+    "conexoes": 32,
+    "repeticao": 2,
+    "ordem_embaralhada": true,
+    "semente_da_ordem": 7,
+    "sequencia_na_execucao": 6,
+    "semente": 1,
+    "massa_arquivo": "data\\massa.csv",
+    "massa_transacoes": 50000
+  },
+  "vazao": {
+    "alvo_tps": 1000,
+    "alcancado_tps": 1000,
+    "percentual_do_alvo": 100,
+    "janela_s": 90,
+    "chegadas_medidas": 90000,
+    "respondidas": 90000
+  },
+  "agendamento": {
+    "atraso_medio_us": 356,
+    "atraso_maximo_us": 19412,
+    "injetor_saturado": false
+  },
+  "latencia_servico": {
+    "amostras": 90000,
+    "media_us": 30403.35955555555,
+    "mediana_us": 26543,
+    "p95_us": 51583,
+    "p99_us": 81151,
+    "p99_9_us": 151295,
+    "minimo_us": 20160,
+    "maximo_us": 459007,
+    "desvio_padrao_us": 12855.16244853007
+  },
+  "latencia_resposta": {
+    "amostras": 90000,
+    "media_us": 31541.380622222292,
+    "mediana_us": 27839,
+    "p95_us": 52959,
+    "p99_us": 82559,
+    "p99_9_us": 152063,
+    "minimo_us": 19872,
+    "maximo_us": 462591,
+    "desvio_padrao_us": 12946.3371227684
+  },
+  "desfechos": {
+    "aprovadas": 76398,
+    "recusadas": 13602,
+    "erros_transporte": 0,
+    "timeouts": 0,
+    "taxa_aprovacao": 0.8488666666666667,
+    "distribuicao_de39": {
+      "00": 76398,
+      "05": 4154,
+      "14": 2669,
+      "51": 5395,
+      "91": 1384
+    }
+  },
+  "ambiente": {
+    "versao_go": "go1.25.3",
+    "gomaxprocs": 4,
+    "num_cpu": 4,
+    "goos": "windows",
+    "goarch": "amd64",
+    "gogc": "100 (padrao, nao definido no ambiente)",
+    "relogio_fonte": "QueryPerformanceCounter",
+    "relogio_resolucao_ns": 100,
+    "linha_de_comando": "results\\experimento-20260928T110052\\injector.exe -tps 1000 -duration 2m0s -warmup 30s -conns 32 -rep 2 -seq 6 -shuffle=true -order-seed 7 -results results\\experimento-20260928T110052\\rodadas -sut-config results\\experimento-20260928T110052\\autorizador.json",
+    "flags_injetor": {
+      "conns": "32",
+      "duration": "2m0s",
+      "massa": "data\\massa.csv",
+      "order-seed": "7",
+      "rep": "2",
+      "results": "results\\experimento-20260928T110052\\rodadas",
+      "seed": "1",
+      "seq": "6",
+      "shuffle": "true",
+      "sut-config": "results\\experimento-20260928T110052\\autorizador.json",
+      "tps": "1000",
+      "warmup": "30s"
+    },
+    "config_autorizador": {
+      "config": {
+        "latency-dist": "lognormal",
+        "approval-rate": 0.85,
+        "decline-dist": "51:40,05:30,14:20,91:10",
+        "decline-bias": "",
+        "max-conns": 0,
+        "seed": 42,
+        "echo-only": false,
+        "latency-base": "20ms",
+        "latency-jitter": "10ms"
+      },
+      "ambiente": {
+        "versao_go": "go1.25.3",
+        "gomaxprocs": 4,
+        "num_cpu": 4,
+        "goos": "windows",
+        "goarch": "amd64",
+        "gogc": "100 (padrao, nao definido no ambiente)",
+        "linha_de_comando": "results\\experimento-20260928T110052\\authorizer.exe --latency-base 20ms --latency-jitter 10ms --latency-dist lognormal --approval-rate 0.85 --decline-dist 51:40,05:30,14:20,91:10 --seed 42 --quiet --config-out results\\experimento-20260928T110052\\autorizador.json"
+      }
+    }
+  }
+}

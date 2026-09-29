@@ -13,8 +13,8 @@ latência e vazão que sustentem a análise do artigo.
 
 ## Estado
 
-Implementado até o **passo 6** da ordem de execução, mais a massa sintética de
-entrada. O aparato está calibrado e seus limites declarados.
+Aparato completo e **experimentos finais executados**. Resultados na seção 10
+de [docs/experimento.md](docs/experimento.md).
 
 | Passo | Componente | Estado |
 |-------|-----------|--------|
@@ -26,6 +26,7 @@ entrada. O aparato está calibrado e seus limites declarados.
 | 6 | Baseline de calibração | **concluído** |
 | — | Massa sintética de entrada | **concluído** |
 | — | Validação da detecção (controle negativo e positivo) | **concluído** |
+| 7 | Experimentos finais | **concluído** |
 | 7 | Execução dos experimentos | pendente |
 
 ## Requisitos
@@ -263,8 +264,15 @@ mede o injetor e não o autorizador — e descobrir isso depois de rodar tudo é
 pior cenário possível.
 
 ```sh
-go run ./cmd/calibrate
+go build -o calibrate.exe ./cmd/calibrate
+./calibrate.exe
 ```
+
+> Use o binário compilado, não `go run`. O Windows Defender bloqueia de forma
+> intermitente o executável temporário que o `go run` constrói em `%TEMP%`,
+> como falso positivo, e a mensagem de erro não sugere a solução. Compilar
+> explicitamente também tira a recompilação do caminho de execução da
+> varredura.
 
 | Flag | Padrão | Efeito |
 |------|--------|--------|
@@ -277,6 +285,10 @@ go run ./cmd/calibrate
 | `-shuffle` | `true` | sorteia a ordem de execução das rodadas |
 | `-order-seed` | `1` | semente do sorteio da ordem |
 | `-rest` | `3s` | repouso entre rodadas |
+| `-sut-args` | `--echo-only` | argumentos do autorizador; o padrão calibra contra o alvo trivial |
+| `-nome` | `calibracao` | prefixo da pasta de saída |
+| `-massa-seed` | `42` | semente base da ordem de consumo da massa |
+| `-vary-seed` | `true` | soma o número da repetição à semente, tornando as repetições independentes também no desfecho |
 | `-gomaxprocs-injector` | `0` | `GOMAXPROCS` do injetor; 0 mantém o padrão |
 | `-gomaxprocs-authorizer` | `0` | `GOMAXPROCS` do autorizador; 0 mantém o padrão |
 | `-gogc` | — | `GOGC` imposto aos dois processos |
@@ -353,22 +365,87 @@ confundimento possível.
 
 O detalhamento está em [docs/experimento.md](docs/experimento.md), seção 9.
 
+## Resultados dos experimentos
+
+Executados em 28/09/2026: 10, 100, 500 e 1000 TPS, 5 repetições de 2 min cada,
+ordem sorteada. Alvo com latência base de 20 ms e jitter lognormal de média
+10 ms, aprovação de 85%.
+
+### O aparato recupera a distribuição configurada
+
+| Quantil | Previsto | 100 TPS | 500 TPS | 1000 TPS |
+|---------|----------|---------|---------|----------|
+| p50 | 26,8 ms | 26,7 ms | 27,2 ms | 27,3 ms |
+| p95 | 52,1 ms | 51,7 ms | 52,8 ms | 52,5 ms |
+| p99 | 82,8 ms | 81,0 ms | 83,6 ms | 83,4 ms |
+
+Concordância dentro de 2% em três quantis e três níveis de carga. A vazão ficou
+em 100% do alvo em todos os níveis, sem uma falha de transporte.
+
+### A latência de resposta revela o que a de serviço esconde
+
+A latência de serviço é praticamente idêntica nos quatro níveis — o alvo não
+degradou. Mas a 1000 TPS o p99 observado pelo cliente é **138 ms**, contra
+83 ms de serviço:
+
+| Alvo | Utilização do pool | p99 resposta − serviço | Atraso de agendamento |
+|------|--------------------|------------------------|----------------------|
+| 100 TPS | 8,4% | 0,6 ms | 0,45 ms |
+| 500 TPS | 42,2% | 2,0 ms | 0,76 ms |
+| **1000 TPS** | **84,4%** | **55,1 ms** | 0,77 ms |
+
+Os 55 ms não são atraso do injetor — o agendamento permaneceu em 0,77 ms. É
+**fila no pool de conexões**: com 32 conexões e serviço de 27 ms a capacidade é
+de ~1185 TPS, e a 1000 TPS a utilização chega a 84%.
+
+É o gargalo que uma medição só de latência de serviço reportaria como
+inexistente. Daí a regra de dimensionamento:
+
+> conexões ≥ TPS × latência de serviço ÷ utilização alvo
+
+### Limitações declaradas
+
+**O nível de 10 TPS é ruidoso** — 900 requisições por repetição, contra 90.000
+a 1000 TPS. Seu p99 não é comparável ao dos demais níveis e seu p99,9 não é
+estimável.
+
+**As repetições não são réplicas independentes para desfecho de negócio.** Com
+as sementes fixas, as cinco repetições de um nível consomem as mesmas
+transações e recebem as mesmas decisões — são réplicas apenas para latência.
+Corrigido depois dos experimentos com `-vary-seed`, que soma o número da
+repetição à semente de consumo.
+
+**Significância não é relevância.** A 1000 TPS o teste de independência dá
+p = 0,048 num alvo sem viés, mas a diferença entre as taxas é de 8%, contra
+189% no controle positivo. Com 90.000 observações o teste detecta diferenças
+irrelevantes; reporte tamanho de efeito ao lado do p-valor.
+
 ## Limites conhecidos do aparato
 
-Apurados pela calibração de 22/09/2026 e registrados em
-[`results/calibracao-20260922T190806/calibracao.json`](results/calibracao-20260922T190806/calibracao.json).
+Apurados pela **segunda calibração**, de 28/09/2026, sob ordem sorteada e plano
+de energia Alto desempenho. Registro em
+[`results/calibracao-20260928T104552/calibracao.json`](results/calibracao-20260928T104552/calibracao.json).
 
 | Limite | Valor |
 |--------|-------|
-| **Teto de injeção** | **500 TPS** |
-| Primeira taxa saturada | 1000 TPS |
-| Piso de atraso de agendamento | 1166 µs |
-| Piso de serviço (ida e volta em loopback) | 278 µs |
-| Ruído na cauda, p99 | 1,1 a 34,9 ms — **não reprodutível entre sessões** |
+| **Teto de injeção (critério da mediana)** | **2000 TPS** |
+| **Maior nível com todas as repetições aprovadas** | **1000 TPS** |
+| Primeira taxa saturada | 3000 TPS |
+| Piso de atraso de agendamento | 440 µs |
+| Piso de serviço (ida e volta em loopback) | 190 µs |
+| Ruído na cauda, p99 | 1,2 a 7,8 ms |
 
-**Nenhum experimento deve ser executado acima de 500 TPS.** Acima disso, o
-atraso médio de agendamento supera o intervalo entre chegadas e o resultado
-mede o injetor, não o autorizador.
+Os experimentos param em **1000 TPS**: é o maior nível em que as cinco
+repetições foram aprovadas. A 1500 e 2000 TPS duas de cinco reprovam
+individualmente, e rodar exatamente no teto convidaria a crítica de que os
+dados do nível mais alto vêm de onde o aparato já falha em 40% das tentativas.
+
+> **O teto não é constante da máquina.** A primeira calibração, em 22/09,
+> apurou 500 TPS; a segunda, 2000 TPS. Entre elas mudaram a ordem das rodadas,
+> o plano de energia, o repouso e a forma de execução — mas a evidência aponta
+> para variabilidade entre sessões como causa dominante, não para nenhuma
+> dessas mudanças. **Recalibre imediatamente antes de cada lote de
+> experimentos** e reporte o valor da sessão que produziu os dados.
 
 A **vazão permanece em 100% em todos os níveis**, inclusive nos saturados: o
 injetor entrega o número correto de requisições e recebe todas as respostas até

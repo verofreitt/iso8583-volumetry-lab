@@ -1,0 +1,461 @@
+{
+  "procedimento": {
+    "niveis_tps": [
+      10,
+      100,
+      500,
+      1000
+    ],
+    "repeticoes": 5,
+    "duracao": "2m0s",
+    "warmup": "30s",
+    "conexoes": 32,
+    "limiar_vazao_percentual": 99,
+    "modo_do_alvo": "--echo-only",
+    "ordem_embaralhada": true,
+    "semente_da_ordem": 7,
+    "repouso_entre_rodadas": "5s",
+    "ordem_de_execucao": [
+      {
+        "tps": 100,
+        "repeticao": 5
+      },
+      {
+        "tps": 500,
+        "repeticao": 1
+      },
+      {
+        "tps": 100,
+        "repeticao": 4
+      },
+      {
+        "tps": 500,
+        "repeticao": 5
+      },
+      {
+        "tps": 100,
+        "repeticao": 2
+      },
+      {
+        "tps": 1000,
+        "repeticao": 2
+      },
+      {
+        "tps": 100,
+        "repeticao": 1
+      },
+      {
+        "tps": 10,
+        "repeticao": 2
+      },
+      {
+        "tps": 10,
+        "repeticao": 4
+      },
+      {
+        "tps": 500,
+        "repeticao": 3
+      },
+      {
+        "tps": 100,
+        "repeticao": 3
+      },
+      {
+        "tps": 10,
+        "repeticao": 1
+      },
+      {
+        "tps": 500,
+        "repeticao": 4
+      },
+      {
+        "tps": 1000,
+        "repeticao": 3
+      },
+      {
+        "tps": 10,
+        "repeticao": 3
+      },
+      {
+        "tps": 500,
+        "repeticao": 2
+      },
+      {
+        "tps": 1000,
+        "repeticao": 1
+      },
+      {
+        "tps": 1000,
+        "repeticao": 5
+      },
+      {
+        "tps": 10,
+        "repeticao": 5
+      },
+      {
+        "tps": 1000,
+        "repeticao": 4
+      }
+    ],
+    "inicio": "2026-09-28T11:00:52.2010749-03:00",
+    "fim": "2026-09-28T11:42:43.93373-03:00"
+  },
+  "limites": {
+    "teto_injecao_tps": 1000,
+    "piso_atraso_agendamento_us": 454,
+    "piso_servico_mediana_us": 27279,
+    "ruido_p99_minimo_us": 80959,
+    "ruido_p99_mediana_us": 83647,
+    "ruido_p99_maximo_us": 144639,
+    "observacoes": [
+      "nenhum nivel saturou: o teto esta acima da faixa varrida e nao foi determinado",
+      "o piso de atraso e a granularidade do temporizador do sistema operacional, nao contencao do injetor: ele nao diminui em taxas baixas",
+      "o p99 foi medido contra --echo-only e nao cresce com a carga; a variacao entre niveis e ruido ambiente da maquina, nao enfileiramento",
+      "uma latencia de servico configurada abaixo do p99 maximo nao e distinguivel do aparato na cauda"
+    ]
+  },
+  "niveis": [
+    {
+      "tps": 10,
+      "repeticoes": [
+        {
+          "atraso_medio_us": 3233,
+          "atraso_maximo_us": 119715,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 27999,
+          "p99_servico_us": 150527,
+          "p99_9_servico_us": 225919,
+          "mediana_resposta_us": 29007,
+          "p99_resposta_us": 205567,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 670,
+          "atraso_maximo_us": 61361,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26159,
+          "p99_servico_us": 101887,
+          "p99_9_servico_us": 161919,
+          "mediana_resposta_us": 26815,
+          "p99_resposta_us": 102655,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 2648,
+          "atraso_maximo_us": 247749,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 27279,
+          "p99_servico_us": 192255,
+          "p99_9_servico_us": 442367,
+          "mediana_resposta_us": 28063,
+          "p99_resposta_us": 234367,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 2344,
+          "atraso_maximo_us": 120438,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 27743,
+          "p99_servico_us": 144639,
+          "p99_9_servico_us": 179839,
+          "mediana_resposta_us": 28799,
+          "p99_resposta_us": 163967,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 814,
+          "atraso_maximo_us": 41941,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26687,
+          "p99_servico_us": 84927,
+          "p99_9_servico_us": 162047,
+          "mediana_resposta_us": 27583,
+          "p99_resposta_us": 98239,
+          "erros_transporte": 0,
+          "timeouts": 0
+        }
+      ],
+      "intervalo_entre_chegadas_us": 100000,
+      "atraso_medio_us": 2344,
+      "atraso_maximo_us": 119715,
+      "percentual_do_alvo": 100,
+      "mediana_servico_us": 27279,
+      "p99_servico_us": 144639,
+      "p99_9_servico_us": 179839,
+      "mediana_resposta_us": 28063,
+      "p99_resposta_us": 163967,
+      "falhas": 0,
+      "repeticoes_com_falha": 0,
+      "sustentado": true
+    },
+    {
+      "tps": 100,
+      "repeticoes": [
+        {
+          "atraso_medio_us": 454,
+          "atraso_maximo_us": 35388,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26703,
+          "p99_servico_us": 80639,
+          "p99_9_servico_us": 132223,
+          "mediana_resposta_us": 27151,
+          "p99_resposta_us": 81087,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 432,
+          "atraso_maximo_us": 7791,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26687,
+          "p99_servico_us": 80447,
+          "p99_9_servico_us": 132351,
+          "mediana_resposta_us": 27151,
+          "p99_resposta_us": 81023,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 1079,
+          "atraso_maximo_us": 93276,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 27327,
+          "p99_servico_us": 88767,
+          "p99_9_servico_us": 143231,
+          "mediana_resposta_us": 27983,
+          "p99_resposta_us": 96895,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 439,
+          "atraso_maximo_us": 11547,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26703,
+          "p99_servico_us": 80959,
+          "p99_9_servico_us": 132351,
+          "mediana_resposta_us": 27135,
+          "p99_resposta_us": 81343,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 701,
+          "atraso_maximo_us": 78784,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 27007,
+          "p99_servico_us": 85247,
+          "p99_9_servico_us": 145919,
+          "mediana_resposta_us": 27567,
+          "p99_resposta_us": 89407,
+          "erros_transporte": 0,
+          "timeouts": 0
+        }
+      ],
+      "intervalo_entre_chegadas_us": 10000,
+      "atraso_medio_us": 454,
+      "atraso_maximo_us": 35388,
+      "percentual_do_alvo": 100,
+      "mediana_servico_us": 26703,
+      "p99_servico_us": 80959,
+      "p99_9_servico_us": 132351,
+      "mediana_resposta_us": 27151,
+      "p99_resposta_us": 81343,
+      "falhas": 0,
+      "repeticoes_com_falha": 0,
+      "sustentado": true
+    },
+    {
+      "tps": 500,
+      "repeticoes": [
+        {
+          "atraso_medio_us": 384,
+          "atraso_maximo_us": 11495,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26575,
+          "p99_servico_us": 81983,
+          "p99_9_servico_us": 147199,
+          "mediana_resposta_us": 26959,
+          "p99_resposta_us": 82303,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 762,
+          "atraso_maximo_us": 42063,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 27407,
+          "p99_servico_us": 83647,
+          "p99_9_servico_us": 147839,
+          "mediana_resposta_us": 28207,
+          "p99_resposta_us": 85631,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 3525,
+          "atraso_maximo_us": 461576,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": true,
+          "mediana_servico_us": 27231,
+          "p99_servico_us": 93823,
+          "p99_9_servico_us": 215551,
+          "mediana_resposta_us": 28127,
+          "p99_resposta_us": 800767,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 1079,
+          "atraso_maximo_us": 191455,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 27343,
+          "p99_servico_us": 97983,
+          "p99_9_servico_us": 215167,
+          "mediana_resposta_us": 27983,
+          "p99_resposta_us": 371711,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 464,
+          "atraso_maximo_us": 39246,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26719,
+          "p99_servico_us": 82943,
+          "p99_9_servico_us": 147583,
+          "mediana_resposta_us": 27151,
+          "p99_resposta_us": 84543,
+          "erros_transporte": 0,
+          "timeouts": 0
+        }
+      ],
+      "intervalo_entre_chegadas_us": 2000,
+      "atraso_medio_us": 762,
+      "atraso_maximo_us": 42063,
+      "percentual_do_alvo": 100,
+      "mediana_servico_us": 27231,
+      "p99_servico_us": 83647,
+      "p99_9_servico_us": 147839,
+      "mediana_resposta_us": 27983,
+      "p99_resposta_us": 85631,
+      "falhas": 0,
+      "repeticoes_com_falha": 1,
+      "sustentado": true,
+      "motivo_saturacao": "sustentado pela mediana, com repeticao 3 (atraso medio de 3525 us)"
+    },
+    {
+      "tps": 1000,
+      "repeticoes": [
+        {
+          "atraso_medio_us": 772,
+          "atraso_maximo_us": 41094,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 27375,
+          "p99_servico_us": 83391,
+          "p99_9_servico_us": 158719,
+          "mediana_resposta_us": 32319,
+          "p99_resposta_us": 138495,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 356,
+          "atraso_maximo_us": 19412,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 26543,
+          "p99_servico_us": 81151,
+          "p99_9_servico_us": 151295,
+          "mediana_resposta_us": 27839,
+          "p99_resposta_us": 82559,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 2173,
+          "atraso_maximo_us": 146259,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": true,
+          "mediana_servico_us": 27183,
+          "p99_servico_us": 97407,
+          "p99_9_servico_us": 176895,
+          "mediana_resposta_us": 4927487,
+          "p99_resposta_us": 5967871,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 752,
+          "atraso_maximo_us": 46431,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": false,
+          "mediana_servico_us": 27343,
+          "p99_servico_us": 83071,
+          "p99_9_servico_us": 151423,
+          "mediana_resposta_us": 31551,
+          "p99_resposta_us": 117503,
+          "erros_transporte": 0,
+          "timeouts": 0
+        },
+        {
+          "atraso_medio_us": 1109,
+          "atraso_maximo_us": 122284,
+          "percentual_do_alvo": 100,
+          "injetor_saturado": true,
+          "mediana_servico_us": 27455,
+          "p99_servico_us": 85759,
+          "p99_9_servico_us": 167295,
+          "mediana_resposta_us": 90815,
+          "p99_resposta_us": 805375,
+          "erros_transporte": 0,
+          "timeouts": 0
+        }
+      ],
+      "intervalo_entre_chegadas_us": 1000,
+      "atraso_medio_us": 772,
+      "atraso_maximo_us": 46431,
+      "percentual_do_alvo": 100,
+      "mediana_servico_us": 27343,
+      "p99_servico_us": 83391,
+      "p99_9_servico_us": 158719,
+      "mediana_resposta_us": 32319,
+      "p99_resposta_us": 138495,
+      "falhas": 0,
+      "repeticoes_com_falha": 2,
+      "sustentado": true,
+      "motivo_saturacao": "sustentado pela mediana, com repeticao 3 (atraso medio de 2173 us); repeticao 5 (atraso medio de 1109 us)"
+    }
+  ],
+  "ambiente": {
+    "versao_go": "go1.25.3",
+    "num_cpu": 4,
+    "goos": "windows",
+    "goarch": "amd64",
+    "gogc_imposto": "nao imposto (herda o ambiente)",
+    "gomaxprocs_injetor": 0,
+    "gomaxprocs_autorizador": 0,
+    "relogio_fonte": "QueryPerformanceCounter",
+    "relogio_resolucao_ns": 100,
+    "linha_de_comando": "C:\\Users\\verof\\AppData\\Local\\Temp\\claude\\c--Users-verof-OneDrive-Documentos-TCC-iso8583-volumetry-lab\\5f96aab6-c270-414d-a045-8a8d8eda1219\\scratchpad\\calibrate.exe -levels 10,100,500,1000 -reps 5 -duration 2m -warmup 30s -conns 32 -shuffle -order-seed 7 -rest 5s -nome experimento -out results -sut-args --latency-base 20ms --latency-jitter 10ms --latency-dist lognormal --approval-rate 0.85 --decline-dist 51:40,05:30,14:20,91:10 --seed 42"
+  }
+}

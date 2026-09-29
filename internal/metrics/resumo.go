@@ -121,6 +121,15 @@ type Rodada struct {
 	Conexoes           int       `json:"conexoes"`
 	Repeticao          int       `json:"repeticao"`
 
+	// OrdemEmbaralhada e SementeOrdem descrevem como a ordem de execucao do
+	// experimento foi definida.
+	//
+	// Sem elas, o summary.json de uma rodada isolada nao permite saber se o
+	// nivel de carga estava confundido com a posicao na varredura. Ver secao
+	// 6.10 de docs/experimento.md.
+	OrdemEmbaralhada bool  `json:"ordem_embaralhada"`
+	SementeOrdem     int64 `json:"semente_da_ordem"`
+
 	// Sequencia e a posicao desta rodada na ordem de execucao do experimento.
 	//
 	// Quando a ordem dos niveis de carga e sorteada, o nivel deixa de estar

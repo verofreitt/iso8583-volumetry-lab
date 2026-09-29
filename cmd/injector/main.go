@@ -42,16 +42,18 @@ const (
 )
 
 type opcoes struct {
-	tps        float64
-	duracao    time.Duration
-	warmup     time.Duration
-	conexoes   int
-	repeticao  int
-	sequencia  int
-	semente    int64
-	resultados string
-	sutConfig  string
-	massa      string
+	tps          float64
+	duracao      time.Duration
+	warmup       time.Duration
+	conexoes     int
+	repeticao    int
+	sequencia    int
+	embaralhada  bool
+	sementeOrdem int64
+	semente      int64
+	resultados   string
+	sutConfig    string
+	massa        string
 }
 
 func main() {
@@ -65,6 +67,8 @@ func main() {
 	flag.IntVar(&o.conexoes, "conns", 8, "conexoes persistentes mantidas com o autorizador")
 	flag.IntVar(&o.repeticao, "rep", 1, "numero da repeticao, usado no nome da pasta de saida")
 	flag.IntVar(&o.sequencia, "seq", 0, "posicao desta rodada na ordem de execucao do experimento; 0 quando avulsa")
+	flag.BoolVar(&o.embaralhada, "shuffle", false, "a ordem de execucao do experimento a que esta rodada pertence foi sorteada")
+	flag.Int64Var(&o.sementeOrdem, "order-seed", 0, "semente do sorteio da ordem de execucao do experimento")
 	flag.Int64Var(&o.semente, "seed", 1, "semente da ordem de consumo da massa")
 	flag.StringVar(&o.massa, "massa", filepath.Join("data", "massa.csv"), "CSV da massa sintetica de entrada")
 	flag.StringVar(&o.resultados, "results", "results", "raiz onde a pasta da rodada e criada")
@@ -128,6 +132,8 @@ func executar(o opcoes) error {
 			ChegadasTotais:     res.Chegadas,
 			Conexoes:           o.conexoes,
 			Repeticao:          o.repeticao,
+			OrdemEmbaralhada:   o.embaralhada,
+			SementeOrdem:       o.sementeOrdem,
 			Sequencia:          o.sequencia,
 			Semente:            o.semente,
 			MassaArquivo:       o.massa,

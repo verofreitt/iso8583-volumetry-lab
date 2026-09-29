@@ -1,0 +1,72 @@
+{
+  "raw": "results/experimento-20260928T110052/rodadas/20260928T111123-1000tps-2/raw.csv",
+  "massa": "data/massa.csv",
+  "atributo": "mcc",
+  "requisicoes": 90000,
+  "ignoradas_por_falha_de_transporte": 0,
+  "taxa_recusa_geral": 0.15113333333333334,
+  "valores": [
+    {
+      "valor": "4111",
+      "total": 12942,
+      "recusas": 1914,
+      "taxa_recusa": 0.14789058878071396,
+      "ic95_inferior": 0.1418791162592316,
+      "ic95_superior": 0.15411102629035567
+    },
+    {
+      "valor": "5411",
+      "total": 12875,
+      "recusas": 1995,
+      "taxa_recusa": 0.1549514563106796,
+      "ic95_inferior": 0.14880398453605698,
+      "ic95_superior": 0.1613047679934898
+    },
+    {
+      "valor": "5541",
+      "total": 12948,
+      "recusas": 2037,
+      "taxa_recusa": 0.157321594068582,
+      "ic95_inferior": 0.15115183137152868,
+      "ic95_superior": 0.16369463056099673
+    },
+    {
+      "valor": "5812",
+      "total": 12656,
+      "recusas": 1897,
+      "taxa_recusa": 0.14988938053097345,
+      "ic95_inferior": 0.14377661790444385,
+      "ic95_superior": 0.15621461588581526
+    },
+    {
+      "valor": "5912",
+      "total": 12765,
+      "recusas": 1858,
+      "taxa_recusa": 0.145554249902076,
+      "ic95_inferior": 0.1395431153993312,
+      "ic95_superior": 0.15177865179600306
+    },
+    {
+      "valor": "5967",
+      "total": 12747,
+      "recusas": 1876,
+      "taxa_recusa": 0.1471718835804503,
+      "ic95_inferior": 0.14112801608250566,
+      "ic95_superior": 0.1534283448408358
+    },
+    {
+      "valor": "5999",
+      "total": 13067,
+      "recusas": 2025,
+      "taxa_recusa": 0.15497053646590647,
+      "ic95_inferior": 0.14886732428570354,
+      "ic95_superior": 0.16127655371880012
+    }
+  ],
+  "qui2": 12.697361400034588,
+  "graus_de_liberdade": 6,
+  "p_valor": 0.04810167942061949,
+  "frequencia_esperada_minima": 1912.7434666666666,
+  "alfa": 0.05,
+  "independencia_rejeitada": true
+}

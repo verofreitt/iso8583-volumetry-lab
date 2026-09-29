@@ -106,6 +106,9 @@ type Nivel struct {
 	// de repeticoes reprovadas continua registrado.
 	Sustentado bool `json:"sustentado"`
 
+	// MotivoSaturacao carrega o motivo da reprovacao quando Sustentado e falso,
+	// e a ressalva — quais repeticoes falharam isoladamente — quando e
+	// verdadeiro. O texto diz de qual dos dois se trata.
 	MotivoSaturacao string `json:"motivo_saturacao,omitempty"`
 }
 
@@ -235,13 +238,18 @@ type Limites struct {
 // Relatorio e o conteudo do calibracao.json.
 type Relatorio struct {
 	Procedimento Procedimento `json:"procedimento"`
-	Limites      Limites      `json:"limites"`
-	Niveis       []Nivel      `json:"niveis"`
-	Ambiente     Ambiente     `json:"ambiente"`
+
+	// Calibracao distingue uma varredura contra o alvo trivial, que mede o
+	// aparato, de uma contra o alvo configurado, que mede o sistema sob teste.
+	// Os limites so sao apurados no primeiro caso.
+	Calibracao bool     `json:"calibracao"`
+	Limites    Limites  `json:"limites"`
+	Niveis     []Nivel  `json:"niveis"`
+	Ambiente   Ambiente `json:"ambiente"`
 }
 
 func (r *Relatorio) concluir() {
-	if len(r.Niveis) == 0 {
+	if len(r.Niveis) == 0 || !r.Calibracao {
 		return
 	}
 
@@ -291,7 +299,11 @@ func (r *Relatorio) concluir() {
 }
 
 func (r Relatorio) imprimir(w io.Writer) {
-	fmt.Fprintf(w, "\n=== calibracao do aparato ===\n\n")
+	if r.Calibracao {
+		fmt.Fprintf(w, "\n=== calibracao do aparato ===\n\n")
+	} else {
+		fmt.Fprintf(w, "\n=== experimento ===\n\n")
+	}
 	fmt.Fprintf(w, "alvo em %s, %d repeticoes de %v por nivel, %d conexoes\n\n",
 		r.Procedimento.ModoAlvo, r.Procedimento.Repeticoes, r.Procedimento.Duracao, r.Procedimento.Conexoes)
 
@@ -304,6 +316,14 @@ func (r Relatorio) imprimir(w io.Writer) {
 		fmt.Fprintf(w, "%8g %10d %10d %8.1f %10d %10d %10d  %s\n",
 			n.TPS, n.IntervaloUS, n.AtrasoMedioUS, n.PercentualDoAlvo,
 			n.MedianaServicoUS, n.P99ServicoUS, n.P99RespostaUS, situacao(n.Sustentado))
+	}
+
+	// Os limites só descrevem o aparato quando o alvo é trivial. Contra um alvo
+	// com latência configurada, a mediana de serviço é a latência do alvo, e
+	// reportá-la como "piso de ida e volta em loopback" seria falso.
+	if !r.Calibracao {
+		r.imprimirRessalvas(w)
+		return
 	}
 
 	fmt.Fprintf(w, "\n--- limites declarados do aparato ---\n\n")
@@ -325,8 +345,23 @@ func (r Relatorio) imprimir(w io.Writer) {
 		fmt.Fprintf(w, "- %s\n", o)
 	}
 
+	r.imprimirRessalvas(w)
+}
+
+// imprimirRessalvas lista os niveis que reprovaram e os que passaram
+// pela mediana apesar de repeticoes isoladas terem falhado.
+func (r Relatorio) imprimirRessalvas(w io.Writer) {
 	for _, n := range r.Niveis {
-		if n.MotivoSaturacao != "" {
+		if n.MotivoSaturacao == "" {
+			continue
+		}
+		// o campo carrega duas coisas: o motivo, quando o nivel reprovou, e a
+		// ressalva, quando ele passou pela mediana apesar de repeticoes
+		// isoladas terem falhado. Rotular as duas como "saturou" contradiz a
+		// coluna "situacao" da tabela acima.
+		if n.Sustentado {
+			fmt.Fprintf(w, "\n%g TPS, ressalva: %s\n", n.TPS, n.MotivoSaturacao)
+		} else {
 			fmt.Fprintf(w, "\n%g TPS saturou: %s\n", n.TPS, n.MotivoSaturacao)
 		}
 	}

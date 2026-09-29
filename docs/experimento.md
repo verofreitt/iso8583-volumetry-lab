@@ -3,9 +3,11 @@
 Documento de registro do aparato. Cada decisão que afeta a interpretação dos
 números medidos é registrada aqui, com a justificativa.
 
-Estado atual: **capacidade de detecção validada** com controle negativo e
-positivo (seção 9). Os limites declarados do aparato estão na seção 6.7; as
-decisões revistas durante a execução, na seção 8. As seções de ambiente, procedimento de execução e
+Estado atual: **experimentos finais executados** (seção 10), sobre aparato
+calibrado sob ordem sorteada (seção 6.11) e com capacidade de detecção validada
+por controle negativo e positivo (seção 9). **Os limites do aparato reportados no artigo são os da seção 6.11**, da segunda
+calibração; os da seção 6.7 ficam como histórico. As decisões revistas durante
+a execução estão na seção 8. As seções de ambiente, procedimento de execução e
 resultados são preenchidas conforme os passos seguintes forem concluídos.
 
 ---
@@ -833,7 +835,12 @@ Fixar `GOGC` em um valor alto reduz a frequência das pausas ao custo de mais
 memória. A decisão pertence ao desenho de cada experimento, e o que o aparato
 garante é que a escolha fique registrada.
 
-### 6.7 Resultado da calibração
+### 6.7 Resultado da primeira calibração (histórico)
+
+> **Esta seção é histórico, não resultado.** A varredura foi executada em ordem
+> sequencial, antes da correção descrita na seção 6.10, e por isso o nível de
+> carga está confundido com a posição na varredura. Os limites reportados no
+> artigo são os da seção 6.11.
 
 Varredura de 22/09/2026, 8 níveis, 5 repetições de 15 s com 5 s de warm-up,
 32 conexões, alvo em `--echo-only`. Relatório completo em
@@ -863,9 +870,9 @@ sistemática, não ruído.
 | Piso de serviço (mediana, ida e volta em loopback) | 278 µs |
 | Ruído na cauda, p99 | 4,5 ms mínimo, 17,7 ms mediana, 34,9 ms máximo |
 
-**Nenhum experimento deve ser executado acima de 500 TPS.** Acima disso, o
-atraso médio de agendamento supera o intervalo entre chegadas e o resultado
-mede o injetor, não o autorizador.
+Nesta varredura o teto apurado foi de 500 TPS. A segunda calibração, sob ordem
+sorteada e em outra sessão, apurou 2000 TPS — ver seção 6.11 para a comparação
+e para o que a diferença significa.
 
 Note que a **vazão permanece em 100% em todos os níveis**, inclusive nos
 saturados. O injetor entrega o número correto de requisições e recebe todas as
@@ -1105,6 +1112,127 @@ e fica registrada — a varredura continua reproduzível.
 > permanecem válidos como ordem de grandeza, mas a atribuição de uma diferença
 > específica a um nível de carga, nelas, carrega o confundimento descrito acima.
 > Os experimentos finais usam a ordem sorteada.
+
+### 6.11 Segunda calibração, sob ordem sorteada — limites do artigo
+
+A calibração foi **refeita em 28/09/2026** com a ordem das rodadas sorteada,
+corrigindo o confundimento descrito na seção 6.10.
+
+> **Os limites reportados no artigo vêm desta segunda execução.** Os números da
+> primeira, na seção 6.7, ficam como histórico e não como resultado.
+
+Parâmetros idênticos aos da primeira — 8 níveis, 5 repetições de 15 s com 5 s
+de warm-up, 32 conexões, alvo em `--echo-only` — acrescidos de ordem sorteada
+com semente 1 e repouso fixo de 3 s entre rodadas. Todas as rodadas sob o plano
+de energia **Alto desempenho**, declarado.
+
+Relatório em
+[`results/calibracao-20260928T104552/calibracao.json`](../results/calibracao-20260928T104552/calibracao.json).
+
+#### Resultado
+
+| Alvo | Intervalo | Atraso médio | Vazão | p50 serviço | p99 serviço | Reprovadas | Situação |
+|------|-----------|--------------|-------|-------------|-------------|------------|----------|
+| 100 TPS | 10000 µs | 623 µs | 100,0% | 236 µs | 1,2 ms | 0 de 5 | sustentado |
+| 250 TPS | 4000 µs | 710 µs | 100,0% | 362 µs | 3,5 ms | 0 de 5 | sustentado |
+| 500 TPS | 2000 µs | 657 µs | 100,0% | 174 µs | 3,5 ms | 0 de 5 | sustentado |
+| 1000 TPS | 1000 µs | 574 µs | 100,0% | 169 µs | 3,6 ms | 0 de 5 | sustentado |
+| 1500 TPS | 666 µs | 570 µs | 100,0% | 177 µs | 5,3 ms | **2 de 5** | sustentado pela mediana |
+| 2000 TPS | 500 µs | 440 µs | 100,0% | 176 µs | 5,0 ms | **2 de 5** | sustentado pela mediana |
+| 3000 TPS | 333 µs | 531 µs | 100,0% | 190 µs | 5,1 ms | 5 de 5 | **saturado** |
+| 5000 TPS | 200 µs | 586 µs | 100,0% | 437 µs | 7,8 ms | 5 de 5 | **saturado** |
+
+#### Limites declarados
+
+| Limite | Valor |
+|--------|-------|
+| **Teto de injeção (critério da mediana)** | **2000 TPS** |
+| **Maior nível com todas as repetições aprovadas** | **1000 TPS** |
+| Primeira taxa saturada | 3000 TPS |
+| Piso de atraso de agendamento | 440 µs |
+| Piso de serviço, mediana | 190 µs |
+| Ruído na cauda, p99 | 1,2 a 7,8 ms |
+
+O atraso médio permanece **entre 440 e 710 µs em todas as taxas**, de 100 a
+5000 TPS. Não é contenção do injetor: é o piso do temporizador, já
+caracterizado na seção 6.8. O teto é, portanto, simplesmente onde o intervalo
+entre chegadas cruza esse piso.
+
+#### O teto subiu de 500 para 2000 TPS, e a causa não é o sorteio
+
+A comparação com a primeira calibração precisa de cuidado, porque **quatro
+coisas mudaram entre as duas execuções**, não uma:
+
+| | Primeira (22/09) | Segunda (28/09) |
+|---|---|---|
+| ordem das rodadas | sequencial | **sorteada** |
+| plano de energia | Equilibrado | **Alto desempenho** |
+| repouso entre rodadas | nenhum | **3 s** |
+| execução | `go run`, recompila a cada invocação | binário compilado |
+
+Atribuir a mudança de teto ao sorteio seria infundado. O que a evidência
+disponível indica:
+
+- O plano de energia **não explica**: o teste pareado da seção 6.9 mostrou
+  efeito de cerca de 6% na mediana e nenhum na cauda.
+- A linha de base de 28/09 no plano **Equilibrado** já dava p99 de 1294 µs a
+  100 TPS, contra 9063 e 34.879 µs das medições de 22/09 na mesma
+  configuração. Ou seja, a máquina estava em estado melhor em 28/09
+  independentemente de qualquer mudança de procedimento.
+
+A explicação dominante é, portanto, **a variabilidade entre sessões já
+documentada na seção 6.9** — a mesma que faz o p99 a 100 TPS variar de 1,2 a
+34,9 ms sem que a taxa explique.
+
+O sorteio e o repouso não subiram o teto: eles tornaram a medição **livre do
+confundimento** entre nível de carga e posição na varredura. O ganho é de
+validade, não de desempenho.
+
+> Isso tem uma consequência desagradável e que precisa ser dita: **o teto do
+> aparato não é uma constante da máquina.** Ele foi 500 TPS numa sessão e 2000
+> TPS em outra. A calibração deve ser refeita imediatamente antes de cada lote
+> de experimentos, e o valor reportado deve ser o da sessão que produziu os
+> dados — não um número herdado.
+
+#### Por que os experimentos finais param em 1000 TPS
+
+O teto declarado pelo critério da mediana é 2000 TPS, mas **1500 e 2000 TPS têm
+2 de 5 repetições reprovando individualmente**. São níveis marginais: passam
+porque a mediana passa, não porque o aparato os sustente com folga.
+
+O maior nível em que **todas** as repetições foram aprovadas é **1000 TPS**, e
+é ele o nível mais alto dos experimentos finais. Rodar exatamente no teto
+convidaria a crítica de que os dados do nível mais alto foram colhidos onde o
+aparato já falha em 40% das tentativas.
+
+### 6.12 Antivírus e a execução por `go run`
+
+A segunda calibração falhou na primeira tentativa com:
+
+```
+open ...\go-build...\exe\calibrate.exe: Não foi possível concluir a operação
+com êxito porque o arquivo contém um vírus ou software possivelmente indesejado.
+```
+
+É falso positivo do Windows Defender sobre o executável temporário que o
+`go run` constrói em `%TEMP%`. O mesmo comando havia funcionado em execuções
+anteriores, o que torna o bloqueio intermitente.
+
+**Procedimento adotado:** compilar o binário explicitamente e executá-lo, em vez
+de usar `go run`:
+
+```sh
+go build -o calibrate.exe ./cmd/calibrate
+./calibrate.exe -levels ... -shuffle
+```
+
+Além de contornar o antivírus, isso remove a compilação do caminho de execução
+da varredura — o `go run` recompila a cada invocação, e essa compilação compete
+por CPU e disco com a rodada seguinte.
+
+O episódio é registrado porque afeta a replicabilidade: quem reproduzir o
+trabalho em Windows com Defender ativo pode encontrar o mesmo bloqueio, e a
+mensagem de erro não sugere a solução.
 
 ---
 
@@ -1378,3 +1506,176 @@ Wilson estão implementados em `analysis/qui2/estatistica.go` e ancorados em
 percentis tabelados por `TestQui2ContraValoresConhecidos` — uma implementação
 errada da função gama incompleta produziria p-valores plausíveis e falsos, que
 é o pior modo de falha possível para uma análise que vai ao artigo.
+---
+
+## 10. Experimentos finais
+
+Executados em 28/09/2026, sob ordem sorteada e plano de energia Alto
+desempenho. Registro em
+[`results/experimento-20260928T110052/`](../results/experimento-20260928T110052/).
+
+### 10.1 Desenho
+
+| Parâmetro | Valor |
+|-----------|-------|
+| níveis de carga | 10, 100, 500, 1000 TPS |
+| repetições | 5 por nível |
+| duração | 2 min, com 30 s de warm-up descartado |
+| conexões | 32 |
+| ordem | sorteada, semente 7 |
+| repouso entre rodadas | 5 s |
+| alvo | latência base 20 ms, jitter lognormal de média 10 ms |
+| taxa de aprovação | 0,85, recusas em `51:40,05:30,14:20,91:10` |
+| semente do alvo | 42 |
+
+O nível mais alto é **1000 TPS**, e não o teto de 2000 apurado na seção 6.11:
+1000 TPS é o maior nível em que as cinco repetições da calibração foram
+aprovadas individualmente. Ver 6.11 para o raciocínio.
+
+### 10.2 O aparato recupera a distribuição configurada
+
+A comparação mais direta entre o que foi configurado no alvo e o que a medição
+devolveu. A previsão vem da parametrização declarada na seção 4.3 — base de
+20 ms mais lognormal de média 10 ms e σ = 1, logo μ = ln 10 − ½ — acrescida do
+excesso de 0,7 ms do `time.Sleep` medido na seção 4.4.
+
+| Quantil | Previsto | 100 TPS | 500 TPS | 1000 TPS |
+|---------|----------|---------|---------|----------|
+| p50 | 26,8 ms | 26,7 ms | 27,2 ms | 27,3 ms |
+| p95 | 52,1 ms | 51,7 ms | 52,8 ms | 52,5 ms |
+| p99 | 82,8 ms | 81,0 ms | 83,6 ms | 83,4 ms |
+
+Concordância dentro de **2% em três quantis e três níveis de carga**. É a
+evidência mais forte de que a cadeia inteira — geração da massa, montagem da
+mensagem, transporte, relógio de alta resolução, histograma — mede o que diz
+medir.
+
+A taxa de aprovação medida ficou entre 84,89% e 86,44%, contra 85% configurada.
+
+### 10.3 Vazão
+
+| Alvo | Requisições medidas | Vazão alcançada | Erros | Timeouts |
+|------|--------------------|-----------------|-------|----------|
+| 10 TPS | 900 | 100,0% | 0 | 0 |
+| 100 TPS | 9.000 | 100,0% | 0 | 0 |
+| 500 TPS | 45.000 | 100,0% | 0 | 0 |
+| 1000 TPS | 90.000 | 100,0% | 0 | 0 |
+
+O alvo deu conta de toda a carga até 1000 TPS, sem uma única falha de
+transporte.
+
+### 10.4 O achado principal: a latência de resposta revela o que a de serviço esconde
+
+A latência de **serviço** é praticamente idêntica nos quatro níveis — o alvo não
+degradou. A de **resposta**, que parte do instante de chegada pretendido, conta
+outra história:
+
+| Alvo | Utilização do pool | p50 resposta − serviço | p99 resposta − serviço | Atraso de agendamento |
+|------|--------------------|------------------------|------------------------|----------------------|
+| 10 TPS | 0,8% | 0,9 ms | 19,3 ms | 2,34 ms |
+| 100 TPS | 8,4% | 0,5 ms | 0,6 ms | 0,45 ms |
+| 500 TPS | 42,2% | 0,6 ms | 2,0 ms | 0,76 ms |
+| **1000 TPS** | **84,4%** | **4,9 ms** | **55,1 ms** | 0,77 ms |
+
+A 1000 TPS o p99 observado pelo cliente é **138 ms**, contra 83 ms de serviço. A
+diferença de 55 ms **não é atraso do injetor**: o atraso de agendamento
+permaneceu em 0,77 ms, igual ao dos demais níveis.
+
+A causa é o **pool de conexões**. Com 32 conexões e serviço de 27 ms, a
+capacidade é de 32 ÷ 0,027 ≈ 1185 TPS; a 1000 TPS a utilização chega a 84%, e
+em regime de fila M/M/c a espera cresce de forma não-linear nessa faixa. As
+requisições enfileiram esperando conexão livre, e essa espera pertence à
+experiência do cliente.
+
+**É exatamente o gargalo que uma medição só de latência de serviço reportaria
+como inexistente.** O autorizador está saudável nos quatro níveis; o sistema,
+visto de fora, não está.
+
+Consequência prática, em forma de regra de dimensionamento:
+
+> conexões ≥ TPS × latência de serviço ÷ utilização alvo
+
+Para 1000 TPS, serviço de 27 ms e utilização alvo de 50%, seriam necessárias
+54 conexões, não 32.
+
+### 10.5 O nível de 10 TPS é ruidoso e por quê
+
+A 10 TPS o p95 saiu em 73,9 ms e o p99 em 144,6 ms, contra os ~52 e ~83 ms dos
+demais níveis. Duas causas concorrem e os dados não as separam:
+
+1. **Amostra pequena.** São 900 requisições medidas por repetição, contra
+   90.000 a 1000 TPS. O p99 é estimado sobre cerca de nove observações na
+   cauda, e o p99,9 não é estimável.
+2. **Ociosidade.** A 10 TPS o intervalo entre chegadas é de 100 ms, e o mesmo
+   efeito de despertar a partir do ocioso discutido na seção 6.9 pode atuar —
+   ainda que lá o plano de energia tenha sido descartado como explicação.
+
+A duração fixa por rodada é exigência de método (seção 5.3 do CLAUDE.md) e
+produz, por construção, amostras muito diferentes entre níveis. **O p99 do nível
+de 10 TPS não deve ser comparado ao dos demais**, e o p99,9 não deve ser
+reportado para ele.
+
+### 10.6 Repetições não são réplicas independentes para desfecho de negócio
+
+Esta é uma limitação do desenho, descoberta na análise e não prevista.
+
+Ao aplicar o teste de independência às cinco repetições de 1000 TPS, as cinco
+devolveram **exatamente o mesmo qui-quadrado**, 12,6974. A conferência direta
+confirmou o motivo: o resumo criptográfico do conjunto de pares
+(transação, código de resposta) é **idêntico byte a byte** nas cinco.
+
+A causa é o encadeamento de decisões determinísticas:
+
+```
+desfecho = f(semente do mock, STAN)
+STAN     = índice da chegada
+ordem da massa = f(semente do injetor)
+```
+
+Com as três sementes fixas entre repetições, as cinco consomem as mesmas
+transações na mesma ordem e recebem as mesmas decisões. As repetições são
+réplicas independentes **para latência** — que variou de 26,5 a 27,5 ms de
+mediana — e **uma única amostra** para desfecho de negócio.
+
+Tratar as cinco como independentes numa análise de recusa seria
+**pseudorreplicação**.
+
+**Correção implementada.** O orquestrador passou a somar o número da repetição
+à semente de consumo da massa (`--vary-seed`, padrão ligado), de modo que cada
+repetição percorre a massa em ordem distinta. A verificação confirmou que os
+resumos criptográficos passam a diferir entre repetições.
+
+Fixar a semente continua disponível e é o comportamento correto quando o
+desenho pede comparação pareada — como no controle positivo da seção 9, em que
+a única diferença entre as condições precisa ser o viés injetado.
+
+**Os experimentos desta seção foram executados antes da correção.** Portanto:
+
+- a análise de **latência** usa as cinco repetições legitimamente;
+- a análise de **desfecho** dispõe de uma amostra por nível, ainda que de
+  90.000 requisições a 1000 TPS.
+
+### 10.7 Significância não é relevância
+
+O teste de independência entre recusa e MCC a 1000 TPS devolveu χ² = 12,70 com
+6 graus de liberdade e **p = 0,0481** — rejeitando a independência a 5% num
+alvo **sem viés configurado**.
+
+Não é erro aleatório: dado o determinismo, o resultado é reprodutível. É uma
+flutuação amostral daquele conjunto específico de STANs que calha de cruzar o
+limiar.
+
+O que importa é o **tamanho do efeito**:
+
+| | Taxa mínima | Taxa máxima | Diferença relativa |
+|---|---|---|---|
+| experimento a 1000 TPS, sem viés | 0,1456 | 0,1573 | **8%** |
+| controle positivo, com viés injetado (seção 9) | 0,1418 | 0,4091 | **189%** |
+
+A 500 TPS, com metade das amostras, o mesmo teste dá p = 0,847.
+
+> Com dezenas de milhares de observações, um teste de significância detecta
+> diferenças irrelevantes. **O artigo deve reportar tamanho de efeito ao lado do
+> p-valor**, e um p pouco abaixo de 0,05 sobre 90.000 observações não sustenta
+> afirmação de padrão. O contraste com o controle positivo — onde a taxa mais
+> que dobra — é o que dá escala ao que conta como padrão detectado.

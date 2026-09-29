@@ -139,7 +139,7 @@ func TestNivelConsolidaPelaMediana(t *testing.T) {
 func TestTetoParaNaPrimeiraSaturacao(t *testing.T) {
 	s := repeticaoSaturada()
 
-	r := Relatorio{Niveis: []Nivel{
+	r := Relatorio{Calibracao: true, Niveis: []Nivel{
 		nivelCom(100, repeticaoBoa()),
 		nivelCom(500, repeticaoBoa()),
 		nivelCom(1000, repeticaoBoa()),
@@ -158,7 +158,7 @@ func TestTetoParaNaPrimeiraSaturacao(t *testing.T) {
 }
 
 func TestTetoQuandoNenhumNivelSatura(t *testing.T) {
-	r := Relatorio{Niveis: []Nivel{
+	r := Relatorio{Calibracao: true, Niveis: []Nivel{
 		nivelCom(100, repeticaoBoa()),
 		nivelCom(500, repeticaoBoa()),
 	}}
@@ -175,7 +175,7 @@ func TestTetoQuandoNenhumNivelSatura(t *testing.T) {
 func TestTetoQuandoTodosOsNiveisSaturam(t *testing.T) {
 	s := repeticaoSaturada()
 
-	r := Relatorio{Niveis: []Nivel{
+	r := Relatorio{Calibracao: true, Niveis: []Nivel{
 		nivelCom(100, s, s, s),
 		nivelCom(500, s, s, s),
 	}}
@@ -214,7 +214,7 @@ func TestPisosVemDoConjuntoDosNiveis(t *testing.T) {
 	alto.P99ServicoUS = 3500
 	alto.MedianaServicoUS = 200
 
-	r := Relatorio{Niveis: []Nivel{
+	r := Relatorio{Calibracao: true, Niveis: []Nivel{
 		nivelCom(100, baixo), nivelCom(1500, meio), nivelCom(2000, alto),
 	}}
 	r.concluir()
@@ -242,6 +242,7 @@ func TestImprimirContemLimitesEMotivos(t *testing.T) {
 	s := repeticaoSaturada()
 
 	r := Relatorio{
+		Calibracao:   true,
 		Procedimento: Procedimento{Repeticoes: 3, Duracao: "15s", Conexoes: 32, ModoAlvo: "--echo-only"},
 		Niveis: []Nivel{
 			nivelCom(100, repeticaoBoa()),
@@ -266,6 +267,32 @@ func TestImprimirContemLimitesEMotivos(t *testing.T) {
 		if !strings.Contains(texto, trecho) {
 			t.Errorf("saida nao contem %q:\n%s", trecho, texto)
 		}
+	}
+}
+
+// TestImprimirNaoRotulaSustentadoComoSaturado cobre um defeito de
+// apresentacao: o campo de motivo carrega tanto a reprovacao quanto a ressalva
+// de um nivel que passou pela mediana, e rotular os dois como "saturou"
+// contradiz a coluna de situacao da tabela.
+func TestImprimirNaoRotulaSustentadoComoSaturado(t *testing.T) {
+	// nivel sustentado pela mediana, com uma repeticao reprovada
+	n := nivelCom(1500, repeticaoBoa(), repeticaoBoa(), repeticaoSaturada())
+	if !n.Sustentado {
+		t.Fatalf("o nivel deveria ter sido sustentado: %q", n.MotivoSaturacao)
+	}
+
+	r := Relatorio{Calibracao: true, Niveis: []Nivel{n}}
+	r.concluir()
+
+	var saida bytes.Buffer
+	r.imprimir(&saida)
+	texto := saida.String()
+
+	if strings.Contains(texto, "1500 TPS saturou") {
+		t.Errorf("nivel sustentado rotulado como saturado:\n%s", texto)
+	}
+	if !strings.Contains(texto, "1500 TPS, ressalva") {
+		t.Errorf("esperada a ressalva do nivel sustentado:\n%s", texto)
 	}
 }
 
